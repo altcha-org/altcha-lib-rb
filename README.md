@@ -42,10 +42,10 @@ require 'altcha'
 hmac_key = 'secret hmac key'
 
 # Create a new challenge
-options = Altcha::ChallengeOptions.new.tap do |opts|
-  opts.hmac_key = hmac_key
-  opts.max_number = 100000 # the maximum random number
-end
+options = Altcha::ChallengeOptions.new(
+  hmac_key: hmac_key,
+  max_number: 100000 # the maximum random number
+)
 
 challenge = Altcha.create_challenge(options)
 

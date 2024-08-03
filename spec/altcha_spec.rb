@@ -7,12 +7,12 @@ RSpec.describe Altcha do
   let(:hmac_key) { 'test_key' }
   let(:salt) { 'test_salt' }
   let(:number) { 123 }
-  let(:challenge_options) { Altcha::ChallengeOptions.new.tap do |co|
-    co.algorithm = algorithm
-    co.hmac_key = hmac_key
-    co.salt = salt
-    co.number = number
-  end }
+  let(:challenge_options) { Altcha::ChallengeOptions.new(
+    algorithm: algorithm,
+    hmac_key: hmac_key,
+    salt: salt,
+    number: number
+  )}
 
   describe '.random_bytes' do
     it 'generates random bytes of specified length' do
@@ -58,32 +58,32 @@ RSpec.describe Altcha do
   describe '.verify_solution' do
     it 'verifies a correct solution' do
       challenge = Altcha.create_challenge(challenge_options)
-      payload = Altcha::Payload.new.tap do |p|
-        p.algorithm = algorithm
-        p.challenge = challenge.challenge
-        p.number = number
-        p.salt = salt
-        p.signature = challenge.signature
-      end
+      payload = Altcha::Payload.new(
+        algorithm: algorithm,
+        challenge: challenge.challenge,
+        number: number,
+        salt: challenge.salt,
+        signature: challenge.signature
+      )
       expect(Altcha.verify_solution(payload, hmac_key, false)).to be true
     end
 
     it 'verifies a correct solution with expires' do
-      challenge_options_with_expires = Altcha::ChallengeOptions.new.tap do |co|
-        co.algorithm = algorithm
-        co.expires = Time.now.to_i + 3600
-        co.hmac_key = hmac_key
-        co.salt = salt
-        co.number = number
-      end 
+      challenge_options_with_expires = Altcha::ChallengeOptions.new(
+        algorithm: algorithm,
+        expires: Time.now.to_i + 3600,
+        hmac_key: hmac_key,
+        salt: salt,
+        number: number
+      ) 
       challenge = Altcha.create_challenge(challenge_options_with_expires)
-      payload = Altcha::Payload.new.tap do |p|
-        p.algorithm = algorithm
-        p.challenge = challenge.challenge
-        p.number = number
-        p.salt = challenge.salt
-        p.signature = challenge.signature
-      end
+      payload = {
+        algorithm: algorithm,
+        challenge: challenge.challenge,
+        number: number,
+        salt: challenge.salt,
+        signature: challenge.signature
+      }
       expect(Altcha.verify_solution(payload, hmac_key, true)).to be true
     end
 
@@ -100,7 +100,7 @@ RSpec.describe Altcha do
 
   describe '.verify_fields_hash' do
     it 'verifies the hash of form fields' do
-      form_data = { 'field1' => ['value1'], 'field2' => ['value2'] }
+      form_data = { 'field1' => 'value1', 'field2' => 'value2' }
       fields = ['field1', 'field2']
       fields_hash = Altcha.hash_hex(algorithm, "value1\nvalue2")
       expect(Altcha.verify_fields_hash(form_data, fields, fields_hash, algorithm)).to be true
@@ -111,12 +111,12 @@ RSpec.describe Altcha do
     it 'verifies a correct server signature' do
       verification_data = 'classification=GOOD&country=US&verified=true'
       signature = Altcha.hmac_hex(algorithm, Altcha.hash(algorithm, verification_data), hmac_key)
-      payload = Altcha::ServerSignaturePayload.new.tap do |p|
-        p.algorithm = algorithm
-        p.verification_data = verification_data
-        p.signature = signature
-        p.verified = true
-      end
+      payload = Altcha::ServerSignaturePayload.new(
+        algorithm: algorithm,
+        verification_data: verification_data,
+        signature: signature,
+        verified: true
+      )
       is_verified, _verification_data = Altcha.verify_server_signature(payload, hmac_key)
       expect(is_verified).to be true
     end

@@ -23,11 +23,30 @@ module Altcha
   # Class representing options for generating a challenge.
   class ChallengeOptions
     attr_accessor :algorithm, :max_number, :salt_length, :hmac_key, :salt, :number, :expires, :params
+
+    def initialize(algorithm: nil, max_number: nil, salt_length: nil, hmac_key:, salt: nil, number: nil, expires: nil, params: nil)
+      @algorithm = algorithm
+      @max_number = max_number
+      @salt_length = salt_length
+      @hmac_key = hmac_key
+      @salt = salt
+      @number = number
+      @expires = expires
+      @params = params
+    end
   end
 
   # Class representing a challenge with its attributes.
   class Challenge
     attr_accessor :algorithm, :challenge, :maxnumber, :salt, :signature
+
+    def initialize(algorithm:, challenge:, maxnumber: nil, salt:, signature:)
+      @algorithm = algorithm
+      @challenge = challenge
+      @maxnumber = maxnumber
+      @salt = salt
+      @signature = signature
+    end
 
     # Converts the Challenge object to a JSON string.
     # @param options [Hash] options to customize JSON encoding.
@@ -41,19 +60,19 @@ module Altcha
         signature: @signature
       }.to_json(options)
     end
-
-    # Creates a Challenge object from a JSON string.
-    # @param string [String] JSON string to parse.
-    # @return [Challenge] Parsed Challenge object.
-    def from_json(string)
-      data = JSON.parse(string)
-      new data['algorithm'], data['challenge'], data['maxnumber'], data['salt'], data['signature']
-    end
   end
 
   # Class representing the payload of a challenge.
   class Payload
     attr_accessor :algorithm, :challenge, :number, :salt, :signature
+
+    def initialize(algorithm:, challenge:, number:, salt:, signature:)
+      @algorithm = algorithm
+      @challenge = challenge
+      @number = number
+      @salt = salt
+      @signature = signature
+    end
 
     # Converts the Payload object to a JSON string.
     # @param options [Hash] options to customize JSON encoding.
@@ -71,15 +90,28 @@ module Altcha
     # Creates a Payload object from a JSON string.
     # @param string [String] JSON string to parse.
     # @return [Payload] Parsed Payload object.
-    def from_json(string)
+    def self.from_json(string)
       data = JSON.parse(string)
-      new data['algorithm'], data['verificationData'], data['signature'], data['verified']
+      new(
+        algorithm: data['algorithm'],
+        challenge: data['challenge'],
+        number: data['number'],
+        salt: data['salt'],
+        signature: data['signature']
+      )
     end
   end
 
   # Class representing the payload for server signatures.
   class ServerSignaturePayload
     attr_accessor :algorithm, :verification_data, :signature, :verified
+
+    def initialize(algorithm:, verification_data:, signature:, verified:)
+      @algorithm = algorithm
+      @verification_data = verification_data
+      @signature = signature
+      @verified = verified
+    end
 
     # Converts the ServerSignaturePayload object to a JSON string.
     # @param options [Hash] options to customize JSON encoding.
@@ -96,9 +128,14 @@ module Altcha
     # Creates a ServerSignaturePayload object from a JSON string.
     # @param string [String] JSON string to parse.
     # @return [ServerSignaturePayload] Parsed ServerSignaturePayload object.
-    def from_json(string)
+    def self.from_json(string)
       data = JSON.parse(string)
-      new data['algorithm'], data['verificationData'], data['signature'], data['verified']
+      new(
+        algorithm: data['algorithm'],
+        verification_data: data['verificationData'],
+        signature: data['signature'],
+        verified: data['verified']
+      )
     end
   end
 
@@ -106,6 +143,26 @@ module Altcha
   class ServerSignatureVerificationData
     attr_accessor :classification, :country, :detected_language, :email, :expire, :fields, :fields_hash,
                   :ip_address, :reasons, :score, :time, :verified
+
+    # Converts the ServerSignatureVerificationData object to a JSON string.
+    # @param options [Hash] options to customize JSON encoding.
+    # @return [String] JSON representation of the ServerSignatureVerificationData object.
+    def to_json(options = {})
+      {
+        classification: @classification,
+        country: @country,
+        detectedLanguage: @detected_language,
+        email: @email,
+        expire: @expire,
+        fields: @fields,
+        fieldsHash: @fields_hash,
+        ipAddress: @ip_address,
+        reasons: @reasons,
+        score: @score,
+        time: @time,
+        verified: @verified
+      }.to_json(options)
+    end
   end
 
   # Class representing the solution to a challenge.
@@ -204,13 +261,13 @@ module Altcha
     challenge = hash_hex(algorithm, challenge_str)
     signature = hmac_hex(algorithm, challenge, options.hmac_key)
 
-    Challenge.new.tap do |c|
-      c.algorithm = algorithm
-      c.challenge = challenge
-      c.maxnumber = max_number
-      c.salt = salt
-      c.signature = signature
-    end
+    Challenge.new(
+      algorithm: algorithm,
+      challenge: challenge,
+      maxnumber: max_number,
+      salt: salt,
+      signature: signature,
+    )
   end
 
   # Verifies the solution provided by the client.
@@ -224,7 +281,17 @@ module Altcha
     # Decode and parse base64 JSON string if it's a String
     if payload.is_a?(String)
       decoded_payload = Base64.decode64(payload)
-      payload = JSON.parse(decoded_payload, object_class: Payload)
+      payload = Payload.from_json(decoded_payload)
+    
+    # Convert payload from hash to Payload if it's a plain object
+    elsif payload.is_a?(Hash)
+      payload = Payload.new(
+        algorithm: payload[:algorithm],
+        challenge: payload[:challenge],
+        number: payload[:number],
+        salt: payload[:salt],
+        signature: payload[:signature]
+      )
     end
 
     # Ensure payload is an instance of Payload
@@ -243,12 +310,12 @@ module Altcha
     end
 
     # Convert payload to ChallengeOptions
-    challenge_options = ChallengeOptions.new.tap do |co|
-      co.algorithm = payload.algorithm
-      co.hmac_key = hmac_key
-      co.number = payload.number
-      co.salt = payload.salt
-    end
+    challenge_options = ChallengeOptions.new(
+      algorithm: payload.algorithm,
+      hmac_key: hmac_key,
+      number: payload.number,
+      salt: payload.salt
+    )
 
     # Create expected challenge and compare with the provided payload
     expected_challenge = create_challenge(challenge_options)
@@ -272,7 +339,7 @@ module Altcha
   # @param algorithm [String] The hashing algorithm to use.
   # @return [Boolean] True if the fields hash matches, false otherwise.
   def self.verify_fields_hash(form_data, fields, fields_hash, algorithm)
-    lines = fields.map { |field| form_data[field].to_a.first.to_s }
+    lines = fields.map { |field| form_data[field].to_s }
     joined_data = lines.join("\n")
     computed_hash = hash_hex(algorithm, joined_data)
     computed_hash == fields_hash
@@ -286,7 +353,16 @@ module Altcha
     # Decode and parse base64 JSON string if it's a String
     if payload.is_a?(String)
       decoded_payload = Base64.decode64(payload)
-      payload = JSON.parse(decoded_payload, object_class: ServerSignaturePayload)
+      payload = ServerSignaturePayload.from_json(decoded_payload)
+
+    # Convert payload from hash to ServerSignaturePayload if it's a plain object
+    elsif payload.is_a?(Hash)
+      payload = ServerSignaturePayload.new(
+        algorithm: payload[:algorithm],
+        verification_data: payload[:verification_data],
+        signature: payload[:signature],
+        verified: payload[:verified]
+      )
     end
 
     # Ensure payload is an instance of ServerSignaturePayload
