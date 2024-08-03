@@ -17,7 +17,7 @@ This library is compatible with:
 To install the ALTCHA Ruby Library, add it to your Gemfile:
 
 ```ruby
-gem 'altcha', git: 'https://github.com/altcha-org/altcha-lib-rb'
+gem 'altcha'
 ```
 
 Then run:
