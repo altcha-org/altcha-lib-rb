@@ -376,7 +376,7 @@ module Altcha
 
     hash_data = hash(payload.algorithm, payload.verification_data)
     expected_signature = hmac_hex(payload.algorithm, hash_data, hmac_key)
-
+    
     params = URI.decode_www_form(payload.verification_data).to_h
     verification_data = ServerSignatureVerificationData.new.tap do |v|
       v.classification = params['classification'] || nil
@@ -385,6 +385,8 @@ module Altcha
       v.email = params['email'] || nil
       v.expire = params['expire'] ? params['expire'].to_i : nil
       v.fields = params['fields'] ? params['fields'].split(',') : nil
+      v.fields_hash = params['fieldsHash'] || nil
+      v.ip_address = params['ipAddress'] || nil
       v.reasons = params['reasons'] ? params['reasons'].split(',') : nil
       v.score = params['score'] ? params['score'].to_f : nil
       v.time = params['time'] ? params['time'].to_i : nil
