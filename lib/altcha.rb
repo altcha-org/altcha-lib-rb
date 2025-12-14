@@ -254,6 +254,7 @@ module Altcha
 
     salt = options.salt || random_bytes(salt_length).unpack1('H*')
     salt += "?#{URI.encode_www_form(params)}" unless params.empty?
+    salt += salt.end_with?('&') ? '' : '&'
 
     number = options.number || random_int(max_number)
 

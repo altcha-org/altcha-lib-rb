@@ -87,6 +87,25 @@ RSpec.describe Altcha do
       expect(Altcha.verify_solution(payload, hmac_key, true)).to be true
     end
 
+    it 'fails to verify an incorrect solution with salt splicing' do
+      challenge_options_with_expires = Altcha::ChallengeOptions.new(
+        algorithm: algorithm,
+        expires: Time.now.to_i + 3600,
+        hmac_key: hmac_key,
+        salt: salt,
+        number: 123
+      ) 
+      challenge = Altcha.create_challenge(challenge_options_with_expires)
+      payload = {
+        algorithm: algorithm,
+        challenge: challenge.challenge,
+        number: 23,
+        salt: challenge.salt + '1',
+        signature: challenge.signature
+      }
+      expect(Altcha.verify_solution(payload, hmac_key, true)).to be false
+    end
+
     it 'fails to verify an incorrect solution' do
       payload = { algorithm: algorithm, challenge: 'wrong_challenge', number: number, salt: salt, signature: 'wrong_signature' }
       expect(Altcha.verify_solution(payload, hmac_key, false)).to be false
@@ -131,7 +150,7 @@ RSpec.describe Altcha do
   describe '.solve_challenge' do
     it 'solves a challenge correctly' do
       challenge = Altcha.create_challenge(challenge_options)
-      solution = Altcha.solve_challenge(challenge.challenge, salt, algorithm, 10_000, 0)
+      solution = Altcha.solve_challenge(challenge.challenge, challenge.salt, algorithm, 10_000, 0)
       expect(solution).not_to be_nil
       expect(solution.number).to eq(number)
     end
