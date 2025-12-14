@@ -1,13 +1,13 @@
 PATH
   remote: .
   specs:
-    altcha (0.2.1)
+    altcha (1.0.0)
 
 GEM
   remote: https://rubygems.org/
   specs:
     diff-lcs (1.6.2)
-    rake (12.3.3)
+    rake (13.3.1)
     rspec (3.13.1)
       rspec-core (~> 3.13.0)
       rspec-expectations (~> 3.13.0)
@@ -28,9 +28,9 @@ PLATFORMS
 
 DEPENDENCIES
   altcha!
-  bundler (~> 2.5)
-  rake (~> 12.3.3)
+  bundler (~> 4.0.1)
+  rake (~> 13.3.1)
   rspec (~> 3.0)
 
 BUNDLED WITH
-   2.5.11
+  4.0.1
