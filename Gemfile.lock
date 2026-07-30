@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    altcha (2.0.0)
+    altcha (2.0.1)
       base64
 
 GEM
@@ -9,7 +9,7 @@ GEM
   specs:
     base64 (0.3.0)
     diff-lcs (1.6.2)
-    rake (13.3.1)
+    rake (13.4.2)
     rspec (3.13.2)
       rspec-core (~> 3.13.0)
       rspec-expectations (~> 3.13.0)
