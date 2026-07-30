@@ -484,13 +484,16 @@ module Altcha
         )
       end
 
-      # 4b. Slow path: re-derive key from the submitted counter and compare.
+      # 4b. Slow path: re-derive key from the submitted counter and compare,
+      # and require it to satisfy the signed key prefix.
       nonce_bytes       = [challenge.parameters.nonce].pack('H*')
       salt_bytes        = [challenge.parameters.salt].pack('H*')
       password_bytes    = make_password(nonce_bytes, solution.counter)
       derived_key_bytes = derive_key(challenge.parameters, salt_bytes, password_bytes)
       derived_key_hex   = derived_key_bytes.unpack1('H*')
-      invalid           = !constant_time_equal?(derived_key_hex, solution.derived_key)
+      key_matches       = constant_time_equal?(derived_key_hex, solution.derived_key)
+      prefix_matches    = derived_key_hex.start_with?(challenge.parameters.key_prefix)
+      invalid           = !(key_matches && prefix_matches)
 
       VerifySolutionResult.new(
         expired: false, invalid_signature: false, invalid_solution: invalid,

@@ -372,6 +372,28 @@ RSpec.describe Altcha do
         expect(result.invalid_solution).to be true
       end
 
+      it 'fails when the derived key does not satisfy key_prefix (slow path)' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1,
+          key_prefix: 'ffffffffffffff',
+          hmac_signature_secret: hmac_secret
+        )
+        challenge = Altcha::V2.create_challenge(opts)
+
+        # Honestly derive the key for counter 0 without brute-forcing a
+        # counter that actually satisfies key_prefix.
+        nonce_bytes    = [challenge.parameters.nonce].pack('H*')
+        salt_bytes     = [challenge.parameters.salt].pack('H*')
+        password_bytes = Altcha::V2.make_password(nonce_bytes, 0)
+        derived_key    = Altcha::V2.derive_key(challenge.parameters, salt_bytes, password_bytes).unpack1('H*')
+        expect(derived_key).not_to start_with(challenge.parameters.key_prefix)
+
+        solution = Altcha::V2::Solution.new(counter: 0, derived_key: derived_key)
+        result   = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret)
+        expect(result.verified).to be false
+        expect(result.invalid_solution).to be true
+      end
+
       it 'verifies via key signature fast path' do
         opts = Altcha::V2::CreateChallengeOptions.new(
           algorithm: 'SHA-256', cost: 1, counter: 0,
