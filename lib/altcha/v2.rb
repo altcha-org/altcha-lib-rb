@@ -224,18 +224,19 @@ module Altcha
 
     # Options for V2.create_challenge.
     class CreateChallengeOptions
-      attr_accessor :algorithm, :cost, :counter, :data, :expires_at,
+      attr_accessor :algorithm, :cost, :counter, :counter_mode, :data, :expires_at,
                     :hmac_algorithm, :hmac_signature_secret, :hmac_key_signature_secret,
                     :key_length, :key_prefix, :key_prefix_length,
                     :memory_cost, :parallelism
 
-      def initialize(algorithm:, cost:, counter: nil, data: nil,
+      def initialize(algorithm:, cost:, counter: nil, counter_mode: 'uint32', data: nil,
                      expires_at: nil, hmac_algorithm: 'SHA-256', hmac_signature_secret: nil,
                      hmac_key_signature_secret: nil, key_length: nil, key_prefix: nil,
                      key_prefix_length: nil, memory_cost: nil, parallelism: nil)
         @algorithm                = algorithm
         @cost                     = cost
         @counter                  = counter
+        @counter_mode             = counter_mode
         @data                     = data
         @expires_at               = expires_at
         @hmac_algorithm           = hmac_algorithm
@@ -276,10 +277,8 @@ module Altcha
         "{#{pairs.join(',')}}"
       when Array
         "[#{obj.map { |v| js_json(v, false) }.join(',')}]"
-      when Integer
-        obj.abs > MAX_SAFE_INTEGER ? js_number_to_s(obj.to_f) : obj.to_s
-      when Float
-        js_number_to_s(obj)
+      when Integer, Float
+        js_number(obj)
       else
         obj.to_json
       end
@@ -332,11 +331,29 @@ module Altcha
     end
     private_class_method :js_number_to_s
 
-    # Builds the password buffer (nonce bytes + counter) used for key derivation.
-    # Counter is encoded as a 4-byte big-endian unsigned integer.
-    def self.make_password(nonce_bytes, counter)
-      nonce_bytes + [counter].pack('N')
+    # JS Number#toString for a JSON-number value (Integer or finite Float).
+    def self.js_number(num)
+      num.is_a?(Integer) && num.abs <= MAX_SAFE_INTEGER ? num.to_s : js_number_to_s(num.to_f)
     end
+    private_class_method :js_number
+
+    # Counter encodings supported by altcha-lib (JS PasswordBuffer).
+    COUNTER_MODES = %w[uint32 string].freeze
+
+    # Builds the password buffer (nonce bytes + counter) used for key derivation.
+    # 'uint32': 4-byte big-endian unsigned integer (wraps mod 2^32 like JS setUint32).
+    # 'string': the counter's decimal string (JS n.toString()), UTF-8 encoded.
+    def self.make_password(nonce_bytes, counter, counter_mode = 'uint32')
+      validate_counter_mode(counter_mode)
+      nonce_bytes + (counter_mode == 'string' ? js_number(counter) : [counter].pack('N'))
+    end
+
+    def self.validate_counter_mode(counter_mode)
+      return if COUNTER_MODES.include?(counter_mode)
+
+      raise ArgumentError, "Unsupported counter mode: #{counter_mode.inspect} (expected #{COUNTER_MODES.join(', ')})"
+    end
+    private_class_method :validate_counter_mode
 
     # Derives a key from the given parameters, salt, and password bytes.
     def self.derive_key(parameters, salt_bytes, password_bytes)
@@ -435,6 +452,7 @@ module Altcha
     # @return [Challenge]
     def self.create_challenge(options)
       hmac_digest(options.hmac_algorithm) # raise early, even for unsigned challenges
+      validate_counter_mode(options.counter_mode)
       key_length        = options.key_length        || DEFAULT_KEY_LENGTH
       key_prefix        = (options.key_prefix       || DEFAULT_KEY_PREFIX).downcase
       key_prefix_length = options.key_prefix_length || (key_length / 2)
@@ -458,7 +476,7 @@ module Altcha
       if options.counter
         nonce_bytes       = [parameters.nonce].pack('H*')
         salt_bytes        = [parameters.salt].pack('H*')
-        password_bytes    = make_password(nonce_bytes, options.counter)
+        password_bytes    = make_password(nonce_bytes, options.counter, options.counter_mode)
         derived_key_bytes = derive_key(parameters, salt_bytes, password_bytes)
         parameters.key_prefix = derived_key_bytes[0, key_prefix_length].unpack1('H*')
       end
@@ -487,8 +505,11 @@ module Altcha
     # @param max_counter [Integer, nil] Safety cap; nil means no limit.
     # @param counter_start [Integer]
     # @param counter_step [Integer]
+    # @param counter_mode [String] 'uint32' (default) or 'string'; must match create_challenge.
     # @return [Solution, nil]
-    def self.solve_challenge(challenge, max_counter: nil, counter_start: 0, counter_step: 1)
+    def self.solve_challenge(challenge, max_counter: nil, counter_start: 0, counter_step: 1,
+                             counter_mode: 'uint32')
+      validate_counter_mode(counter_mode)
       parameters  = challenge.parameters
       nonce_bytes = [parameters.nonce].pack('H*')
       salt_bytes  = [parameters.salt].pack('H*')
@@ -500,7 +521,7 @@ module Altcha
       loop do
         return nil if max_counter && counter > max_counter
 
-        password_bytes    = make_password(nonce_bytes, counter)
+        password_bytes    = make_password(nonce_bytes, counter, counter_mode)
         derived_key_bytes = derive_key(parameters, salt_bytes, password_bytes)
         derived_key_hex   = derived_key_bytes.unpack1('H*')
 
@@ -522,12 +543,14 @@ module Altcha
     # @param hmac_signature_secret [String] Must match what was used in create_challenge.
     # @param hmac_key_signature_secret [String, nil] Required when keySignature is present.
     # @param hmac_algorithm [String] Defaults to 'SHA-256'.
+    # @param counter_mode [String] 'uint32' (default) or 'string'; must match create_challenge.
     # @return [VerifySolutionResult]
     def self.verify_solution(challenge, solution, hmac_signature_secret:,
                              hmac_key_signature_secret: nil,
-                             hmac_algorithm: 'SHA-256')
+                             hmac_algorithm: 'SHA-256', counter_mode: 'uint32')
       start_time = Time.now
       hmac_digest(hmac_algorithm) # raise on misconfiguration, before any early return
+      validate_counter_mode(counter_mode)
       # An empty secret makes signatures forgeable (JS WebCrypto rejects it too).
       raise ArgumentError, 'hmac_signature_secret must be a non-empty String' unless present?(hmac_signature_secret)
 
@@ -594,7 +617,7 @@ module Altcha
       # and require it to satisfy the signed key prefix.
       nonce_bytes       = [challenge.parameters.nonce].pack('H*')
       salt_bytes        = [challenge.parameters.salt].pack('H*')
-      password_bytes    = make_password(nonce_bytes, solution.counter)
+      password_bytes    = make_password(nonce_bytes, solution.counter, counter_mode)
       derived_key_bytes = derive_key(challenge.parameters, salt_bytes, password_bytes)
       derived_key_hex   = derived_key_bytes.unpack1('H*')
       key_matches       = constant_time_equal?(derived_key_hex, solution.derived_key)

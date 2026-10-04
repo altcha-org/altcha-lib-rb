@@ -243,6 +243,43 @@ RSpec.describe Altcha do
       end
     end
 
+    describe '.make_password' do
+      let(:nonce_bytes) { ['aabbccdd00112233aabbccdd00112233'].pack('H*') }
+
+      it 'appends the counter as a JS number string in string mode' do
+        # Expected suffixes from altcha-lib (JS) PasswordBuffer(nonce, 'string').
+        {
+          0 => '0', 42 => '42', 4_294_967_296 => '4294967296', -5 => '-5',
+          1.5 => '1.5', 1e21 => '1e+21', 9_007_199_254_740_993 => '9007199254740992'
+        }.each do |counter, suffix|
+          expect(Altcha::V2.make_password(nonce_bytes, counter, 'string')).to eq(nonce_bytes + suffix), counter.inspect
+        end
+      end
+
+      it 'raises for an unsupported counter mode' do
+        expect { Altcha::V2.make_password(nonce_bytes, 1, 'utf8') }
+          .to raise_error(ArgumentError, /Unsupported counter mode/)
+      end
+    end
+
+    describe 'string counter mode' do
+      it 'creates, solves and verifies a challenge only with the same counter mode' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, counter: 1234, counter_mode: 'string',
+          hmac_signature_secret: hmac_secret
+        )
+        challenge = Altcha::V2.create_challenge(opts)
+        solution  = Altcha::V2.solve_challenge(challenge, counter_mode: 'string')
+        expect(solution.counter).to be <= 1234
+
+        result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret,
+                                                                 counter_mode: 'string')
+        expect(result.verified).to be true
+        result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret)
+        expect(result.invalid_solution).to be true
+      end
+    end
+
     describe '.create_challenge' do
       it 'creates a valid v2 challenge with SHA-256' do
         opts = Altcha::V2::CreateChallengeOptions.new(

@@ -122,6 +122,7 @@ Creates a new v2 challenge.
 | `algorithm` | `String` | — | Key derivation algorithm: `SHA-256`, `SHA-384`, `SHA-512`, `PBKDF2/SHA-256`, `PBKDF2/SHA-384`, `PBKDF2/SHA-512`, `SCRYPT`, `ARGON2ID`. |
 | `cost` | `Integer` | — | Algorithm cost (iterations for PBKDF2/SHA, N for SCRYPT). |
 | `counter` | `Integer` | `nil` | Pre-compute a deterministic key prefix from this counter value. |
+| `counter_mode` | `String` | `'uint32'` | How the counter is appended to the nonce: `'uint32'` (4-byte big-endian) or `'string'` (decimal text, as JS `counterMode: 'string'`); anything else raises `ArgumentError`. Pass the same value to `solve_challenge` and `verify_solution`. |
 | `data` | `Hash` | `nil` | Arbitrary metadata to embed in the challenge. |
 | `expires_at` | `Integer, Time` | `nil` | Expiration timestamp (Unix seconds or `Time`). Expired once the current time passes it, compared with sub-second precision; `0` means no expiry. |
 | `hmac_algorithm` | `String` | `'SHA-256'` | HMAC algorithm for the challenge signature and key signature: `'SHA-256'`, `'SHA-384'` or `'SHA-512'` (exact, as in altcha-lib JS); anything else raises `ArgumentError`. Pass the same value to `verify_solution`. |
@@ -145,6 +146,7 @@ Solves a challenge by iterating counter values until the derived key starts with
 | `max_counter` | `Integer, nil` | `nil` | Safety cap on the counter. Returns `nil` if exceeded. |
 | `counter_start` | `Integer` | `0` | Starting counter value. |
 | `counter_step` | `Integer` | `1` | Counter increment per iteration. |
+| `counter_mode` | `String` | `'uint32'` | `'uint32'` or `'string'`; must match the challenge's `counter_mode`. |
 
 ---
 
@@ -159,6 +161,7 @@ Verifies a submitted solution.
 | `hmac_signature_secret:` | `String` | Must match the secret used in `create_challenge`. `nil` or `''` raises `ArgumentError`. |
 | `hmac_key_signature_secret:` | `String, nil` | Enables the fast path when `key_signature` is present. `nil` or `''` re-derives the key instead. |
 | `hmac_algorithm:` | `String` | HMAC digest algorithm (`SHA-256`, `SHA-384`, `SHA-512`); anything else raises `ArgumentError`. Default: `SHA-256`. |
+| `counter_mode:` | `String` | `'uint32'` or `'string'`; must match the challenge's `counter_mode`. Default: `uint32`. |
 
 **`VerifySolutionResult`**
 
