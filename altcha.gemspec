@@ -25,6 +25,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "base64"
 
+  spec.add_development_dependency "argon2-kdf", ">= 0.3"
   spec.add_development_dependency "bundler", "~> 4.0"
   spec.add_development_dependency "rake", "~> 13.3"
   spec.add_development_dependency "rspec", "~> 3.13"

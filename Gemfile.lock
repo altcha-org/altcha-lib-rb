@@ -7,8 +7,11 @@ PATH
 GEM
   remote: https://rubygems.org/
   specs:
+    argon2-kdf (1.0.0)
+      fiddle
     base64 (0.3.0)
     diff-lcs (1.6.2)
+    fiddle (1.1.8)
     rake (13.4.2)
     rspec (3.13.2)
       rspec-core (~> 3.13.0)
@@ -30,6 +33,7 @@ PLATFORMS
 
 DEPENDENCIES
   altcha!
+  argon2-kdf (>= 0.3)
   bundler (~> 4.0)
   rake (~> 13.3)
   rspec (~> 3.13)

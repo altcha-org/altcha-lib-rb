@@ -321,16 +321,22 @@ module Altcha
         rescue LoadError
           raise LoadError, "Add 'argon2-kdf' to your Gemfile to use the ARGON2ID algorithm"
         end
-        # argon2-kdf's `m` is log2(memory_cost_in_KiB) — convert from KiB.
-        m_kib = parameters.memory_cost || 65536
-        Argon2::KDF.argon2id(
-          password_bytes,
-          salt:   salt_bytes,
-          t:      parameters.cost,
-          m:      Math.log2(m_kib).round,
-          p:      parameters.parallelism || 1,
-          length: key_len
+        memory_cost = parameters.memory_cost
+        raise ArgumentError, 'ARGON2ID requires memory_cost (KiB)' if memory_cost.nil?
+
+        # argon2-kdf's public API takes log2(memory), which cannot express
+        # non-power-of-two memoryCost values, so call its libargon2 binding
+        # directly with the exact KiB value (as node crypto.argon2 does).
+        hash   = Fiddle::Pointer.malloc(key_len, Fiddle::RUBY_FREE)
+        status = Argon2::KDF::FFI.argon2id_hash_raw(
+          parameters.cost, memory_cost, parameters.parallelism || 1,
+          Fiddle::Pointer[password_bytes], password_bytes.bytesize,
+          Fiddle::Pointer[salt_bytes], salt_bytes.bytesize,
+          hash, key_len
         )
+        raise Argon2::KDF::Error, Argon2::KDF::FFI.argon2_error_message(status).to_s unless status.zero?
+
+        hash[0, key_len]
       when /\APBKDF2\//
         digest = case alg
                  when 'PBKDF2/SHA-512' then 'SHA512'

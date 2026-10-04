@@ -129,7 +129,7 @@ Creates a new v2 challenge.
 | `key_length` | `Integer` | `32` | Derived key length in bytes. |
 | `key_prefix` | `String` | `'00'` | Hex prefix the derived key must start with. |
 | `key_prefix_length` | `Integer` | `key_length / 2` | Bytes of the derived key used as prefix in deterministic mode. |
-| `memory_cost` | `Integer` | `nil` | Memory cost in KiB (`ARGON2ID`), or block size `r` (`SCRYPT`). |
+| `memory_cost` | `Integer` | `nil` | Memory cost in KiB (`ARGON2ID`, required; used exactly, not rounded), or block size `r` (`SCRYPT`). |
 | `parallelism` | `Integer` | `nil` | Parallelism factor (`ARGON2ID`, `SCRYPT`). |
 
 ---

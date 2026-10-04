@@ -325,6 +325,39 @@ RSpec.describe Altcha do
         expect(result.verified).to be true
       end
 
+      it 'derives ARGON2ID keys with the exact memory_cost, matching altcha-lib (JS)' do
+        begin
+          require 'argon2/kdf'
+        rescue LoadError
+          skip 'argon2-kdf gem not available'
+        end
+        nonce_bytes = ['aabbccdd00112233aabbccdd00112233'].pack('H*')
+        salt_bytes  = ['11223344556677889900aabbccddeeff'].pack('H*')
+        password    = Altcha::V2.make_password(nonce_bytes, 42)
+        {
+          [19_456, 1] => '235f71f8f8f81259e0c9d59501bdf17e794f686dbe9cf9c9d28c17f74795b0e2',
+          [16_384, 1] => 'd315044f527ac0dcbc373ec75e0bdfd427bfd0b052e2d3e129e8630fba44ebd6',
+          [1_000, 2]  => '6efe5d1efaf6e43a58a658e0e466c66bb9e72c034f4f1cb07a0d7456a1994ef6'
+        }.each do |(memory_cost, parallelism), expected|
+          params = Altcha::V2::ChallengeParameters.new(
+            algorithm: 'ARGON2ID', nonce: '', salt: '', cost: 2,
+            memory_cost: memory_cost, parallelism: parallelism
+          )
+          derived = Altcha::V2.derive_key(params, salt_bytes, password).unpack1('H*')
+          expect(derived).to eq(expected), "memory_cost #{memory_cost}, parallelism #{parallelism}"
+        end
+      end
+
+      it 'raises when an ARGON2ID challenge has no memory_cost' do
+        begin
+          require 'argon2/kdf'
+        rescue LoadError
+          skip 'argon2-kdf gem not available'
+        end
+        params = Altcha::V2::ChallengeParameters.new(algorithm: 'ARGON2ID', nonce: '', salt: '', cost: 1)
+        expect { Altcha::V2.derive_key(params, 'salt', 'password') }.to raise_error(ArgumentError, /memory_cost/)
+      end
+
       it 'solves a SCRYPT challenge' do
         opts = Altcha::V2::CreateChallengeOptions.new(
           algorithm: 'SCRYPT', cost: 1024, memory_cost: 1, parallelism: 1,
