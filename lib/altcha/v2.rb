@@ -402,7 +402,7 @@ module Altcha
     # @return [Challenge]
     def self.create_challenge(options)
       key_length        = options.key_length        || DEFAULT_KEY_LENGTH
-      key_prefix        = options.key_prefix        || DEFAULT_KEY_PREFIX
+      key_prefix        = (options.key_prefix       || DEFAULT_KEY_PREFIX).downcase
       key_prefix_length = options.key_prefix_length || (key_length / 2)
       expires_at        = options.expires_at.is_a?(Time) ? options.expires_at.to_i : options.expires_at
 
@@ -456,7 +456,8 @@ module Altcha
       parameters  = challenge.parameters
       nonce_bytes = [parameters.nonce].pack('H*')
       salt_bytes  = [parameters.salt].pack('H*')
-      key_prefix  = parameters.key_prefix
+      # Derived keys are lowercase hex; match prefixes case-insensitively.
+      key_prefix  = parameters.key_prefix.downcase
       start_time  = Time.now
       counter     = counter_start
 
@@ -556,7 +557,7 @@ module Altcha
       derived_key_bytes = derive_key(challenge.parameters, salt_bytes, password_bytes)
       derived_key_hex   = derived_key_bytes.unpack1('H*')
       key_matches       = constant_time_equal?(derived_key_hex, solution.derived_key)
-      prefix_matches    = derived_key_hex.start_with?(challenge.parameters.key_prefix)
+      prefix_matches    = derived_key_hex.start_with?(challenge.parameters.key_prefix.downcase)
       invalid           = !(key_matches && prefix_matches)
 
       VerifySolutionResult.new(

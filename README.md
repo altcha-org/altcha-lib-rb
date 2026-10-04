@@ -127,7 +127,7 @@ Creates a new v2 challenge.
 | `hmac_signature_secret` | `String` | `nil` | Signs the challenge parameters. Required for `verify_solution`. |
 | `hmac_key_signature_secret` | `String` | `nil` | Signs the derived key (fast-path verification). Requires `counter`. |
 | `key_length` | `Integer` | `32` | Derived key length in bytes. |
-| `key_prefix` | `String` | `'00'` | Hex prefix the derived key must start with. |
+| `key_prefix` | `String` | `'00'` | Hex prefix the derived key must start with. Lowercased; solve and verify also match prefixes case-insensitively. |
 | `key_prefix_length` | `Integer` | `key_length / 2` | Bytes of the derived key used as prefix in deterministic mode. |
 | `memory_cost` | `Integer` | `nil` | Memory cost in KiB (`ARGON2ID`, required; used exactly, not rounded), or block size `r` (`SCRYPT`). |
 | `parallelism` | `Integer` | `nil` | Parallelism factor (`ARGON2ID`, `SCRYPT`). |

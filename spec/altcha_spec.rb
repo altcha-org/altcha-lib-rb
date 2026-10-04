@@ -281,6 +281,14 @@ RSpec.describe Altcha do
         )
         expect(Altcha::V2.create_challenge(opts).parameters.key_signature).not_to be_nil
       end
+
+      it 'lowercases a custom key_prefix' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, key_prefix: 'AB',
+          hmac_signature_secret: hmac_secret
+        )
+        expect(Altcha::V2.create_challenge(opts).parameters.key_prefix).to eq('ab')
+      end
     end
 
     describe '.solve_challenge' do
@@ -292,6 +300,23 @@ RSpec.describe Altcha do
         solution  = Altcha::V2.solve_challenge(challenge)
         expect(solution).not_to be_nil
         expect(solution.derived_key).to start_with(challenge.parameters.key_prefix)
+      end
+
+      it 'solves and verifies a signed challenge with an uppercase key_prefix' do
+        # Shared test vector: counter 42 derives f2e25aab…; challenges from other
+        # implementations may carry a signed uppercase prefix.
+        params = Altcha::V2::ChallengeParameters.new(
+          algorithm: 'PBKDF2/SHA-256', cost: 1000, key_prefix: 'F2E',
+          nonce: 'aabbccdd00112233aabbccdd00112233', salt: '11223344556677889900aabbccddeeff'
+        )
+        challenge = Altcha::V2::Challenge.new(
+          parameters: params,
+          signature:  Altcha::V2.hmac_hex(Altcha::V2.canonical_json(params.to_h), hmac_secret)
+        )
+        solution = Altcha::V2.solve_challenge(challenge, max_counter: 100)
+        expect(solution.counter).to eq(42)
+        result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret)
+        expect(result.verified).to be true
       end
 
       it 'solves a PBKDF2/SHA-256 challenge' do
