@@ -365,6 +365,9 @@ module Altcha
     # Counter encodings supported by altcha-lib (JS PasswordBuffer).
     COUNTER_MODES = %w[uint32 string].freeze
 
+    # Largest counter in uint32 mode (4-byte big-endian).
+    MAX_UINT32 = (2**32) - 1
+
     # Builds the password buffer (nonce bytes + counter) used for key derivation.
     # 'uint32': 4-byte big-endian unsigned integer (wraps mod 2^32 like JS setUint32).
     # 'string': the counter's decimal string (JS n.toString()), UTF-8 encoded.
@@ -630,9 +633,9 @@ module Altcha
       end
 
       # The solution is unsigned client input: reject malformed fields instead
-      # of raising. Counter must be a JSON number (wrapped mod 2^32 like JS
-      # DataView.setUint32); derived_key must be a string.
-      unless valid_solution_fields?(solution)
+      # of raising. Counter must be a JSON number (in uint32 mode a whole number
+      # in 0..2^32-1, so each solution has one counter); derived_key must be a string.
+      unless valid_solution_fields?(solution, counter_mode)
         return VerifySolutionResult.new(
           expired: false, invalid_signature: false, invalid_solution: true,
           time: elapsed_ms(start_time), verified: false
@@ -753,11 +756,19 @@ module Altcha
 
     # derived_key must be a validly encoded String: the 4a hex regex raises on
     # invalid UTF-8, and such a key can never match a hex key in 4b.
-    def self.valid_solution_fields?(solution)
+    # In uint32 mode the counter must be a whole number in 0..MAX_UINT32: JS
+    # wraps larger values (and rounds them above 2^53), so they would only be
+    # aliases of a smaller counter. Stricter than JS, which accepts c + 2^32.
+    def self.valid_solution_fields?(solution, counter_mode)
       counter     = solution.counter
       derived_key = solution.derived_key
-      (counter.is_a?(Integer) || (counter.is_a?(Float) && counter.finite?)) &&
-        derived_key.is_a?(String) && derived_key.valid_encoding?
+      valid_counter = if counter_mode == 'uint32'
+                        (counter.is_a?(Integer) || (counter.is_a?(Float) && counter.finite? && counter % 1 == 0)) &&
+                          counter >= 0 && counter <= MAX_UINT32
+                      else
+                        counter.is_a?(Integer) || (counter.is_a?(Float) && counter.finite?)
+                      end
+      valid_counter && derived_key.is_a?(String) && derived_key.valid_encoding?
     end
     private_class_method :valid_solution_fields?
 

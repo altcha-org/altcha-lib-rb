@@ -731,6 +731,22 @@ RSpec.describe Altcha do
         expect(result.invalid_solution).to be true
       end
 
+      it 'accepts only one counter per solution in uint32 mode: whole numbers in 0..2^32-1' do
+        challenge, solution = make_challenge_and_solution
+        verify = lambda do |counter|
+          Altcha::V2.verify_solution(challenge, Altcha::V2::Solution.new(counter: counter, derived_key: solution.derived_key),
+                                     hmac_signature_secret: hmac_secret)
+        end
+        expect(verify.call(solution.counter).verified).to be true
+        expect(verify.call(solution.counter.to_f).verified).to be true
+        # Each of these wraps to solution.counter mod 2^32 (JS accepts the first two).
+        [solution.counter + 2**32, solution.counter - 2**32, 2**54 + solution.counter, solution.counter + 0.5].each do |alias_counter|
+          result = verify.call(alias_counter)
+          expect(result.verified).to be(false), alias_counter.inspect
+          expect(result.invalid_solution).to be true
+        end
+      end
+
       it 'returns invalid_solution for malformed solution fields instead of raising' do
         challenge, solution = make_challenge_and_solution
         [

@@ -171,7 +171,7 @@ Verifies a submitted solution.
 | `verified` | `Boolean` | `true` if the solution is valid. |
 | `expired` | `Boolean` | `true` if the challenge has expired. |
 | `invalid_signature` | `Boolean, nil` | `true` if the challenge signature is missing or wrong. |
-| `invalid_solution` | `Boolean, nil` | `true` if the derived key does not match, or the solution is malformed (`counter` not a number, `derived_key` not an even-length hex string). |
+| `invalid_solution` | `Boolean, nil` | `true` if the derived key does not match, or the solution is malformed (`counter` not a number, or in `uint32` mode not a whole number in `0..2^32-1`; `derived_key` not an even-length hex string). |
 | `time` | `Integer` | Verification time in milliseconds. |
 
 ---
