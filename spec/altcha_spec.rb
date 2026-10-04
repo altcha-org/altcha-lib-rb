@@ -626,6 +626,46 @@ RSpec.describe Altcha do
         expect(result.invalid_signature).to be true
       end
 
+      it 'returns invalid_signature for parameters with invalid UTF-8 instead of raising' do
+        challenge, solution = make_challenge_and_solution
+        # JSON.parse turns a lone surrogate escape into an invalid UTF-8 string.
+        [%("\\udc00": 1), %("foo": "\\udc00"), %("2\\udc00": 1)].each do |injected|
+          json   = challenge.to_json.sub('"parameters":{', "\"parameters\":{#{injected},")
+          result = Altcha::V2.verify_solution(Altcha::V2::Challenge.from_json(json), solution,
+                                              hmac_signature_secret: hmac_secret)
+          expect(result.verified).to be(false), injected
+          expect(result.invalid_signature).to be true
+        end
+      end
+
+      it 'returns invalid_solution for an invalid UTF-8 derived_key on both paths' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, counter: 3,
+          hmac_signature_secret: hmac_secret, hmac_key_signature_secret: 'key_secret'
+        )
+        challenge = Altcha::V2.create_challenge(opts)
+        solution  = Altcha::V2::Payload.from_json(
+          %({"challenge":#{challenge.to_json},"solution":{"counter":3,"derivedKey":"\\udc00ab"}})
+        ).solution
+        [{ hmac_key_signature_secret: 'key_secret' }, {}].each do |secrets|
+          result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret, **secrets)
+          expect(result.verified).to be(false), secrets.inspect
+          expect(result.invalid_solution).to be true
+        end
+      end
+
+      it 'returns invalid_signature for a non-string signature instead of raising' do
+        challenge, solution = make_challenge_and_solution
+        [123, [challenge.signature], { 'a' => 1 }].each do |tampered_signature|
+          data = JSON.parse(challenge.to_json)
+          data['signature'] = tampered_signature
+          result = Altcha::V2.verify_solution(Altcha::V2::Challenge.from_h(data), solution,
+                                              hmac_signature_secret: hmac_secret)
+          expect(result.verified).to be(false), tampered_signature.inspect
+          expect(result.invalid_signature).to be true
+        end
+      end
+
       it 'returns invalid_signature for a tampered non-numeric expiresAt instead of raising' do
         challenge, solution = make_challenge_and_solution(expires_at: Time.now.to_i + 600)
         ['abc', [1], { 'a' => 1 }].each do |tampered_expires_at|
@@ -865,6 +905,26 @@ RSpec.describe Altcha do
           result = Altcha::V2.verify_server_signature(payload: payload, hmac_secret: hmac_secret)
           expect(result.verified).to be(false), algorithm.inspect
           expect(result.invalid_signature).to be true
+        end
+      end
+
+      it 'returns a result instead of raising for non-String verification_data' do
+        [nil, 123, ['verified=true']].each do |verification_data|
+          payload = make_server_payload('verified=true', hmac_secret)
+          payload.verification_data = verification_data
+          result = Altcha::V2.verify_server_signature(payload: payload, hmac_secret: hmac_secret)
+          expect(result.verified).to be(false), verification_data.inspect
+          expect(result.invalid_signature).to be true
+          expect(result.invalid_solution).to be true
+        end
+      end
+
+      it 'treats a non-numeric or zero expire as no expiry, like JS' do
+        %w[abc 0].each do |expire|
+          payload = make_server_payload("verified=true&expire=#{expire}", hmac_secret)
+          result  = Altcha::V2.verify_server_signature(payload: payload, hmac_secret: hmac_secret)
+          expect(result.expired).to be(false), expire
+          expect(result.verified).to be true
         end
       end
     end

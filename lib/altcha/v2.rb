@@ -317,8 +317,10 @@ module Altcha
     end
     private_class_method :js_key_order
 
+    # Invalid-UTF-8 keys (e.g. JSON-parsed lone surrogates) are never indices;
+    # checking first keeps the regex from raising on them.
     def self.array_index_key?(key)
-      /\A(?:0|[1-9][0-9]{0,9})\z/.match?(key) && key.to_i <= MAX_ARRAY_INDEX
+      key.valid_encoding? && /\A(?:0|[1-9][0-9]{0,9})\z/.match?(key) && key.to_i <= MAX_ARRAY_INDEX
     end
     private_class_method :array_index_key?
 
@@ -588,20 +590,27 @@ module Altcha
         )
       end
 
-      # 2. Signature presence check.
-      unless challenge.signature
+      # 2. Signature presence check. The signature is client input: anything
+      # but a String (e.g. 123, an Array) is invalid instead of raising.
+      unless challenge.signature.is_a?(String)
         return VerifySolutionResult.new(
           expired: false, invalid_signature: true, invalid_solution: nil,
           time: elapsed_ms(start_time), verified: false
         )
       end
 
-      # 3. Verify challenge signature (tamper detection).
-      expected_sig = hmac_hex(
-        canonical_json(challenge.parameters.to_h),
-        hmac_signature_secret,
-        hmac_algorithm
-      )
+      # 3. Verify challenge signature (tamper detection). The parameters are
+      # client input: strings that cannot be serialized (invalid UTF-8, e.g. a
+      # JSON-parsed lone surrogate) cannot match any signature we issued.
+      begin
+        signed_json = canonical_json(challenge.parameters.to_h)
+      rescue JSON::GeneratorError, EncodingError
+        return VerifySolutionResult.new(
+          expired: false, invalid_signature: true, invalid_solution: nil,
+          time: elapsed_ms(start_time), verified: false
+        )
+      end
+      expected_sig = hmac_hex(signed_json, hmac_signature_secret, hmac_algorithm)
       unless constant_time_equal?(challenge.signature, expected_sig)
         return VerifySolutionResult.new(
           expired: false, invalid_signature: true, invalid_solution: nil,
@@ -699,17 +708,17 @@ module Altcha
     def self.verify_server_signature(payload:, hmac_secret:)
       start_time = Time.now
 
-      # payload.algorithm is client input: an unsupported value fails the
-      # signature check instead of raising.
-      digest = HMAC_DIGESTS[payload.algorithm]
+      # The payload is client input: an unsupported algorithm or non-String
+      # verification_data fails the signature check instead of raising.
+      digest = HMAC_DIGESTS[payload.algorithm] if payload.verification_data.is_a?(String)
       expected_sig = if digest
                        hmac_hex(OpenSSL::Digest.digest(digest, payload.verification_data), hmac_secret, payload.algorithm)
                      end
       verification_data = parse_verification_data(payload.verification_data)
 
-      expired = !!(verification_data &&
-                   verification_data['expire'] &&
-                   verification_data['expire'] < Time.now.to_i)
+      # Like JS `!!expire && expire < now`: non-numeric or 0 never expires.
+      expire  = verification_data && verification_data['expire']
+      expired = (expire.is_a?(Integer) || expire.is_a?(Float)) && !expire.zero? && expire < Time.now.to_i
 
       invalid_signature = expected_sig.nil? || !constant_time_equal?(payload.signature.to_s, expected_sig)
 
@@ -733,10 +742,13 @@ module Altcha
       ((Time.now - start_time) * 1000).round
     end
 
+    # derived_key must be a validly encoded String: the 4a hex regex raises on
+    # invalid UTF-8, and such a key can never match a hex key in 4b.
     def self.valid_solution_fields?(solution)
-      counter = solution.counter
+      counter     = solution.counter
+      derived_key = solution.derived_key
       (counter.is_a?(Integer) || (counter.is_a?(Float) && counter.finite?)) &&
-        solution.derived_key.is_a?(String)
+        derived_key.is_a?(String) && derived_key.valid_encoding?
     end
     private_class_method :valid_solution_fields?
 
