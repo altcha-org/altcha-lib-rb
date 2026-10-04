@@ -200,7 +200,7 @@ Verifies a server signature payload issued by the ALTCHA backend. A payload `alg
 
 ### `Altcha::V2.verify_fields_hash(form_data:, fields:, fields_hash:, algorithm: 'SHA-256')` → `Boolean`
 
-Verifies the SHA digest of selected form fields, matching the `fieldsHash` included in `verification_data`.
+Verifies the SHA digest of selected form fields, matching the `fieldsHash` included in `verification_data`. `algorithm` must be `'SHA-256'`, `'SHA-384'` or `'SHA-512'`; anything else raises `ArgumentError`.
 
 ---
 

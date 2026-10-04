@@ -372,7 +372,7 @@ RSpec.describe Altcha do
         ['SHA-1', 'sha-256', nil].each do |algorithm|
           opts = Altcha::V2::CreateChallengeOptions.new(algorithm: 'SHA-256', cost: 1, hmac_algorithm: algorithm)
           expect { Altcha::V2.create_challenge(opts) }
-            .to raise_error(ArgumentError, /Unsupported HMAC algorithm/), algorithm.inspect
+            .to raise_error(ArgumentError, /Unsupported algorithm/), algorithm.inspect
         end
       end
 
@@ -599,7 +599,7 @@ RSpec.describe Altcha do
         challenge, solution = make_challenge_and_solution(expires_at: Time.now.to_i - 10)
         expect do
           Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret, hmac_algorithm: 'SHA-1')
-        end.to raise_error(ArgumentError, /Unsupported HMAC algorithm/)
+        end.to raise_error(ArgumentError, /Unsupported algorithm/)
       end
 
       it 'fails for an expired challenge' do
@@ -880,6 +880,18 @@ RSpec.describe Altcha do
 
       it 'returns false for a non-matching hash' do
         expect(Altcha::V2.verify_fields_hash(form_data: { 'name' => 'Alice' }, fields: %w[name], fields_hash: 'bad')).to be false
+      end
+
+      it 'uses the given SHA-2 algorithm and raises for any other' do
+        form_data = { 'name' => 'Alice' }
+        sha512    = OpenSSL::Digest::SHA512.hexdigest('Alice')
+        expect(Altcha::V2.verify_fields_hash(form_data: form_data, fields: %w[name], fields_hash: sha512,
+                                             algorithm: 'SHA-512')).to be true
+        ['SHA-1', 'MD5', 'sha-256', nil].each do |algorithm|
+          expect do
+            Altcha::V2.verify_fields_hash(form_data: form_data, fields: %w[name], fields_hash: sha512, algorithm: algorithm)
+          end.to raise_error(ArgumentError, /Unsupported algorithm/), algorithm.inspect
+        end
       end
     end
 

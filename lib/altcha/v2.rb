@@ -447,21 +447,21 @@ module Altcha
       end
     end
 
-    # HMAC algorithms supported by altcha-lib (JS HmacAlgorithm) → OpenSSL digest.
-    HMAC_DIGESTS = { 'SHA-256' => 'SHA256', 'SHA-384' => 'SHA384', 'SHA-512' => 'SHA512' }.freeze
+    # SHA algorithms supported for HMAC (JS HmacAlgorithm) and plain hashes → OpenSSL digest.
+    SHA_DIGESTS = { 'SHA-256' => 'SHA256', 'SHA-384' => 'SHA384', 'SHA-512' => 'SHA512' }.freeze
 
     # Computes an HMAC hex digest using the specified algorithm ('SHA-256' etc.).
-    # Raises ArgumentError for any algorithm outside HMAC_DIGESTS.
+    # Raises ArgumentError for any algorithm outside SHA_DIGESTS.
     def self.hmac_hex(data, key, algorithm = 'SHA-256')
-      OpenSSL::HMAC.hexdigest(hmac_digest(algorithm), key, data)
+      OpenSSL::HMAC.hexdigest(sha_digest(algorithm), key, data)
     end
 
-    def self.hmac_digest(algorithm)
-      HMAC_DIGESTS.fetch(algorithm) do
-        raise ArgumentError, "Unsupported HMAC algorithm: #{algorithm.inspect} (expected #{HMAC_DIGESTS.keys.join(', ')})"
+    def self.sha_digest(algorithm)
+      SHA_DIGESTS.fetch(algorithm) do
+        raise ArgumentError, "Unsupported algorithm: #{algorithm.inspect} (expected #{SHA_DIGESTS.keys.join(', ')})"
       end
     end
-    private_class_method :hmac_digest
+    private_class_method :sha_digest
 
     # Constant-time string comparison.
     def self.constant_time_equal?(a, b)
@@ -476,7 +476,7 @@ module Altcha
     # @param options [CreateChallengeOptions]
     # @return [Challenge]
     def self.create_challenge(options)
-      hmac_digest(options.hmac_algorithm) # raise early, even for unsigned challenges
+      sha_digest(options.hmac_algorithm) # raise early, even for unsigned challenges
       validate_counter_mode(options.counter_mode)
       key_length        = options.key_length        || DEFAULT_KEY_LENGTH
       key_prefix        = (options.key_prefix       || DEFAULT_KEY_PREFIX).downcase
@@ -583,7 +583,7 @@ module Altcha
                              hmac_key_signature_secret: nil,
                              hmac_algorithm: 'SHA-256', counter_mode: 'uint32')
       start_time = Time.now
-      hmac_digest(hmac_algorithm) # raise on misconfiguration, before any early return
+      sha_digest(hmac_algorithm) # raise on misconfiguration, before any early return
       validate_counter_mode(counter_mode)
       # An empty secret makes signatures forgeable (JS WebCrypto rejects it too).
       raise ArgumentError, 'hmac_signature_secret must be a non-empty String' unless present?(hmac_signature_secret)
@@ -700,14 +700,11 @@ module Altcha
     # @param form_data [Hash]
     # @param fields [Array<String>]
     # @param fields_hash [String] Expected hex digest.
-    # @param algorithm [String] Defaults to 'SHA-256'.
+    # @param algorithm [String] 'SHA-256' (default), 'SHA-384' or 'SHA-512';
+    #   anything else raises ArgumentError (JS crypto.subtle.digest throws).
     # @return [Boolean]
     def self.verify_fields_hash(form_data:, fields:, fields_hash:, algorithm: 'SHA-256')
-      digest = case algorithm
-               when 'SHA-512' then 'SHA512'
-               when 'SHA-384' then 'SHA384'
-               else 'SHA256'
-               end
+      digest = sha_digest(algorithm)
       lines = fields.map { |f| form_data[f].to_s }
       OpenSSL::Digest.hexdigest(digest, lines.join("\n")) == fields_hash
     end
@@ -721,7 +718,7 @@ module Altcha
 
       # The payload is client input: an unsupported algorithm or non-String
       # verification_data fails the signature check instead of raising.
-      digest = HMAC_DIGESTS[payload.algorithm] if payload.verification_data.is_a?(String)
+      digest = SHA_DIGESTS[payload.algorithm] if payload.verification_data.is_a?(String)
       expected_sig = if digest
                        hmac_hex(OpenSSL::Digest.digest(digest, payload.verification_data), hmac_secret, payload.algorithm)
                      end
