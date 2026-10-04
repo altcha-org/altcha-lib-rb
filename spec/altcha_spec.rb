@@ -413,6 +413,41 @@ RSpec.describe Altcha do
         expect(result.verified).to be true
       end
 
+      context 'with a prefix that never matches' do
+        # Derived keys are hex, so 'zz' can never match: only a limit stops the loop.
+        let(:unsolvable) do
+          Altcha::V2::Challenge.new(parameters: Altcha::V2::ChallengeParameters.new(
+            algorithm: 'SHA-256', cost: 1, key_prefix: 'zz', nonce: '00' * 16, salt: '00' * 16
+          ))
+        end
+
+        def stub_clock(*readings_ms)
+          allow(Process).to receive(:clock_gettime).and_call_original
+          allow(Process).to receive(:clock_gettime)
+            .with(Process::CLOCK_MONOTONIC, :float_millisecond).and_return(*readings_ms)
+        end
+
+        it 'gives up after the default 90 s timeout' do
+          stub_clock(0.0, 0.0, 90_000.0, 90_000.5) # start, then one reading per iteration
+          expect(Altcha::V2).to receive(:derive_key).twice.and_call_original
+          expect(Altcha::V2.solve_challenge(unsolvable)).to be_nil
+        end
+
+        it 'honours a custom timeout in milliseconds' do
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          expect(Altcha::V2.solve_challenge(unsolvable, timeout: 50)).to be_nil
+          expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 1
+        end
+
+        it 'disables the timeout with nil or 0' do
+          [nil, 0].each do |timeout|
+            stub_clock(0.0, 1e12)
+            expect(Altcha::V2).to receive(:derive_key).exactly(6).times.and_call_original
+            expect(Altcha::V2.solve_challenge(unsolvable, timeout: timeout, max_counter: 5)).to be_nil
+          end
+        end
+      end
+
       it 'solves a PBKDF2/SHA-256 challenge' do
         opts = Altcha::V2::CreateChallengeOptions.new(
           algorithm: 'PBKDF2/SHA-256', cost: 100, hmac_signature_secret: hmac_secret

@@ -147,6 +147,7 @@ Solves a challenge by iterating counter values until the derived key starts with
 | `counter_start` | `Integer` | `0` | Starting counter value. |
 | `counter_step` | `Integer` | `1` | Counter increment per iteration. |
 | `counter_mode` | `String` | `'uint32'` | `'uint32'` or `'string'`; must match the challenge's `counter_mode`. |
+| `timeout` | `Numeric, nil` | `90_000` | Milliseconds before giving up and returning `nil` (JS default). `nil` or `0` disables it. |
 
 ---
 

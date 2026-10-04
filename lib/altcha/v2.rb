@@ -12,6 +12,8 @@ module Altcha
   module V2
     DEFAULT_KEY_LENGTH = 32
     DEFAULT_KEY_PREFIX = '00'
+    # solve_challenge timeout in milliseconds (JS solveChallenge default).
+    DEFAULT_SOLVE_TIMEOUT = 90_000
     # Even-length hex string (case-insensitive, like JS parseInt).
     HEX_PATTERN = /\A(?:[0-9a-fA-F]{2})*\z/.freeze
 
@@ -529,20 +531,24 @@ module Altcha
     # @param counter_start [Integer]
     # @param counter_step [Integer]
     # @param counter_mode [String] 'uint32' (default) or 'string'; must match create_challenge.
-    # @return [Solution, nil]
+    # @param timeout [Numeric, nil] Milliseconds before giving up (default 90 000, as in JS);
+    #   nil or 0 disables it.
+    # @return [Solution, nil] nil when max_counter or the timeout is reached.
     def self.solve_challenge(challenge, max_counter: nil, counter_start: 0, counter_step: 1,
-                             counter_mode: 'uint32')
+                             counter_mode: 'uint32', timeout: DEFAULT_SOLVE_TIMEOUT)
       validate_counter_mode(counter_mode)
       parameters  = challenge.parameters
       nonce_bytes = [parameters.nonce].pack('H*')
       salt_bytes  = [parameters.salt].pack('H*')
       # Derived keys are lowercase hex; match prefixes case-insensitively.
       key_prefix  = parameters.key_prefix.downcase
-      start_time  = Time.now
+      start_ms    = monotonic_ms
       counter     = counter_start
 
       loop do
         return nil if max_counter && counter > max_counter
+        # Checked every iteration (JS: every 10) since one KDF call can be slow.
+        return nil if timeout && timeout.positive? && monotonic_ms - start_ms > timeout
 
         password_bytes    = make_password(nonce_bytes, counter, counter_mode)
         derived_key_bytes = derive_key(parameters, salt_bytes, password_bytes)
@@ -552,13 +558,18 @@ module Altcha
           return Solution.new(
             counter:     counter,
             derived_key: derived_key_hex,
-            time:        ((Time.now - start_time) * 1000).round
+            time:        (monotonic_ms - start_ms).round
           )
         end
 
         counter += counter_step
       end
     end
+
+    def self.monotonic_ms
+      Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)
+    end
+    private_class_method :monotonic_ms
 
     # Verifies a v2 solution against its challenge.
     # @param challenge [Challenge]
