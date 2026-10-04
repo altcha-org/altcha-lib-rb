@@ -355,6 +355,19 @@ RSpec.describe Altcha do
         expect(result.expired).to be true
       end
 
+      it 'returns invalid_signature for a tampered non-numeric expiresAt instead of raising' do
+        challenge, solution = make_challenge_and_solution(expires_at: Time.now.to_i + 600)
+        ['abc', [1], { 'a' => 1 }].each do |tampered_expires_at|
+          data = JSON.parse(challenge.to_json)
+          data['parameters']['expiresAt'] = tampered_expires_at
+          tampered = Altcha::V2::Challenge.from_h(data)
+          result   = Altcha::V2.verify_solution(tampered, solution, hmac_signature_secret: hmac_secret)
+          expect(result.verified).to be false
+          expect(result.expired).to be false
+          expect(result.invalid_signature).to be true
+        end
+      end
+
       it 'fails when challenge has no signature' do
         opts = Altcha::V2::CreateChallengeOptions.new(algorithm: 'SHA-256', cost: 1)
         challenge = Altcha::V2.create_challenge(opts)

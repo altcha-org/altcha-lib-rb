@@ -444,8 +444,11 @@ module Altcha
                              hmac_algorithm: 'SHA-256')
       start_time = Time.now
 
-      # 1. Expiration check.
-      if challenge.parameters.expires_at && Time.now.to_i > challenge.parameters.expires_at
+      # 1. Expiration check. Runs before the signature check, so expires_at may
+      # be tampered: only numbers are compared; anything else falls through and
+      # fails the signature check.
+      expires_at = challenge.parameters.expires_at
+      if (expires_at.is_a?(Integer) || expires_at.is_a?(Float)) && Time.now.to_i > expires_at
         return VerifySolutionResult.new(
           expired: true, invalid_signature: nil, invalid_solution: nil,
           time: elapsed_ms(start_time), verified: false
