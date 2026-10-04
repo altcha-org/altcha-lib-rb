@@ -494,9 +494,11 @@ module Altcha
 
       # 1. Expiration check. Runs before the signature check, so expires_at may
       # be tampered: only numbers are compared; anything else falls through and
-      # fails the signature check.
+      # fails the signature check. Like JS `expiresAt && expiresAt < now`:
+      # 0 means no expiry, and now keeps fractional seconds (no 1 s grace).
       expires_at = challenge.parameters.expires_at
-      if (expires_at.is_a?(Integer) || expires_at.is_a?(Float)) && Time.now.to_i > expires_at
+      if (expires_at.is_a?(Integer) || expires_at.is_a?(Float)) &&
+         !expires_at.zero? && expires_at < Time.now.to_f
         return VerifySolutionResult.new(
           expired: true, invalid_signature: nil, invalid_solution: nil,
           time: elapsed_ms(start_time), verified: false

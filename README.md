@@ -123,7 +123,7 @@ Creates a new v2 challenge.
 | `cost` | `Integer` | — | Algorithm cost (iterations for PBKDF2/SHA, N for SCRYPT). |
 | `counter` | `Integer` | `nil` | Pre-compute a deterministic key prefix from this counter value. |
 | `data` | `Hash` | `nil` | Arbitrary metadata to embed in the challenge. |
-| `expires_at` | `Integer, Time` | `nil` | Expiration timestamp (Unix seconds or `Time`). |
+| `expires_at` | `Integer, Time` | `nil` | Expiration timestamp (Unix seconds or `Time`). Expired once the current time passes it, compared with sub-second precision; `0` means no expiry. |
 | `hmac_signature_secret` | `String` | `nil` | Signs the challenge parameters. Required for `verify_solution`. |
 | `hmac_key_signature_secret` | `String` | `nil` | Signs the derived key (fast-path verification). Requires `counter`. |
 | `key_length` | `Integer` | `32` | Derived key length in bytes. |

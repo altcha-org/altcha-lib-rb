@@ -450,6 +450,22 @@ RSpec.describe Altcha do
         expect(result.expired).to be true
       end
 
+      it 'treats expires_at equal to the current whole second as expired' do
+        now = 1_800_000_000
+        allow(Time).to receive(:now).and_return(Time.at(now + 0.5))
+        challenge, solution = make_challenge_and_solution(expires_at: now)
+        result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret)
+        expect(result.verified).to be false
+        expect(result.expired).to be true
+      end
+
+      it 'treats expires_at 0 as no expiry' do
+        challenge, solution = make_challenge_and_solution(expires_at: 0)
+        result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret)
+        expect(result.verified).to be true
+        expect(result.expired).to be false
+      end
+
       it 'returns invalid_signature for a tampered non-numeric expiresAt instead of raising' do
         challenge, solution = make_challenge_and_solution(expires_at: Time.now.to_i + 600)
         ['abc', [1], { 'a' => 1 }].each do |tampered_expires_at|
