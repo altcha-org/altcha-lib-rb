@@ -255,17 +255,26 @@ module Altcha
     # Largest integer a JS number holds exactly (Number.MAX_SAFE_INTEGER).
     MAX_SAFE_INTEGER = (2**53) - 1
 
-    # Produces a canonical (sorted-key, compact) JSON string.
-    # Numbers are formatted like JS JSON.stringify so signatures match across
-    # implementations and survive a JS parse/stringify round-trip.
+    # Largest array index; JSON.stringify emits keys "0".."4294967294" first.
+    MAX_ARRAY_INDEX = (2**32) - 2
+
+    # Produces a canonical (sorted-key, compact) JSON string, byte-identical to
+    # JS JSON.stringify(sortKeys(obj)): keys and numbers are ordered/formatted
+    # like JS so signatures match across implementations and survive a JS
+    # parse/stringify round-trip.
     def self.canonical_json(obj)
+      js_json(obj, true)
+    end
+
+    # sort_keys mirrors JS sortKeys, which recurses into objects but returns
+    # arrays (and any objects inside them) untouched.
+    def self.js_json(obj, sort_keys)
       case obj
       when Hash
-        pairs = obj.sort_by { |k, _| k.to_s }
-                   .map { |k, v| "#{k.to_s.to_json}:#{canonical_json(v)}" }
+        pairs = js_key_order(obj, sort_keys).map { |k, v| "#{k.to_json}:#{js_json(v, sort_keys)}" }
         "{#{pairs.join(',')}}"
       when Array
-        "[#{obj.map { |v| canonical_json(v) }.join(',')}]"
+        "[#{obj.map { |v| js_json(v, false) }.join(',')}]"
       when Integer
         obj.abs > MAX_SAFE_INTEGER ? js_number_to_s(obj.to_f) : obj.to_s
       when Float
@@ -274,6 +283,23 @@ module Altcha
         obj.to_json
       end
     end
+    private_class_method :js_json
+
+    # JS object key order: array-index keys ascending numerically, then the
+    # remaining keys in insertion order. sortKeys inserts them sorted with
+    # Array#sort, which compares UTF-16 code units.
+    def self.js_key_order(hash, sort_keys)
+      pairs = hash.map { |k, v| [k.to_s, v] }
+      index_pairs, named_pairs = pairs.partition { |k, _| array_index_key?(k) }
+      named_pairs = named_pairs.sort_by { |k, _| k.encode(Encoding::UTF_16BE) } if sort_keys
+      index_pairs.sort_by { |k, _| k.to_i } + named_pairs
+    end
+    private_class_method :js_key_order
+
+    def self.array_index_key?(key)
+      /\A(?:0|[1-9][0-9]{0,9})\z/.match?(key) && key.to_i <= MAX_ARRAY_INDEX
+    end
+    private_class_method :array_index_key?
 
     # ECMAScript Number::toString as used by JSON.stringify; non-finite → null.
     # Float#to_s yields the shortest round-trip digits, same as JS.

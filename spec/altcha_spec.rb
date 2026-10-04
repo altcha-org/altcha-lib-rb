@@ -192,6 +192,19 @@ RSpec.describe Altcha do
         expect(result).to eq('{"a":0,"b":{"a":2,"z":1}}')
       end
 
+      it 'orders keys like JS JSON.stringify(sortKeys(obj))' do
+        # Expected strings produced by altcha-lib (JS) canonicalJSON.
+        expect(Altcha::V2.canonical_json({ 'x' => 'c', '10' => 'a', '2' => 'b' }))
+          .to eq('{"2":"b","10":"a","x":"c"}')
+        input = {
+          'b' => 1, '01' => 1, '4294967294' => 1, '4294967295' => 1, '-1' => 1, '1.5' => 1,
+          "\uFF61" => 1, "\u{1F600}" => 1, 'a' => [{ 'z' => 1, 'y' => 2, '3' => 0 }]
+        }
+        expect(Altcha::V2.canonical_json(input)).to eq(
+          "{\"4294967294\":1,\"-1\":1,\"01\":1,\"1.5\":1,\"4294967295\":1,\"a\":[{\"3\":0,\"z\":1,\"y\":2}],\"b\":1,\"\u{1F600}\":1,\"\uFF61\":1}"
+        )
+      end
+
       it 'formats numbers like JS JSON.stringify' do
         {
           1.0                   => '1',
