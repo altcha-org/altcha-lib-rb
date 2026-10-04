@@ -191,6 +191,43 @@ RSpec.describe Altcha do
         result = Altcha::V2.canonical_json({ 'b' => { 'z' => 1, 'a' => 2 }, 'a' => 0 })
         expect(result).to eq('{"a":0,"b":{"a":2,"z":1}}')
       end
+
+      it 'formats numbers like JS JSON.stringify' do
+        {
+          1.0                   => '1',
+          -2.5                  => '-2.5',
+          -0.0                  => '0',
+          1e-6                  => '0.000001',
+          1e-7                  => '1e-7',
+          1.5e-7                => '1.5e-7',
+          123_456.789           => '123456.789',
+          1e20                  => '100000000000000000000',
+          1e21                  => '1e+21',
+          2.5e21                => '2.5e+21',
+          0.1 + 0.2             => '0.30000000000000004',
+          Float::NAN            => 'null',
+          Float::INFINITY       => 'null',
+          42                    => '42',
+          (2**53) - 1           => '9007199254740991',
+          12_345_678_901_234_567_890 => '12345678901234567000'
+        }.each do |value, expected|
+          expect(Altcha::V2.canonical_json(value)).to eq(expected), "#{value.inspect} → #{expected}"
+        end
+      end
+
+      it 'verifies a challenge after a JS parse/stringify round-trip of float data' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, data: { 'x' => 1.0 },
+          hmac_signature_secret: hmac_secret
+        )
+        challenge = Altcha::V2.create_challenge(opts)
+        solution  = Altcha::V2.solve_challenge(challenge)
+        # JSON.stringify(JSON.parse(...)) turns 1.0 into 1.
+        js_json   = challenge.to_json.sub('"x":1.0', '"x":1')
+        restored  = Altcha::V2::Challenge.from_json(js_json)
+        result    = Altcha::V2.verify_solution(restored, solution, hmac_signature_secret: hmac_secret)
+        expect(result.verified).to be true
+      end
     end
 
     describe '.create_challenge' do

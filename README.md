@@ -207,7 +207,7 @@ Parses a URL-encoded `verificationData` string into a typed Hash. Booleans, inte
 
 ### `Altcha::V2.canonical_json(obj)` → `String`
 
-Produces a canonical (alphabetically sorted keys, compact) JSON string. Used internally for signing.
+Produces a canonical (alphabetically sorted keys, compact) JSON string. Numbers are formatted like JS `JSON.stringify` (`1.0` → `1`, `1e-7` → `1e-7`, integers beyond 2^53 rounded to the nearest double). Used internally for signing.
 
 ---
 

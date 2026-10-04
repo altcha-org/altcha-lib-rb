@@ -250,7 +250,12 @@ module Altcha
     # Module-level functions
     # -------------------------------------------------------------------------
 
+    # Largest integer a JS number holds exactly (Number.MAX_SAFE_INTEGER).
+    MAX_SAFE_INTEGER = (2**53) - 1
+
     # Produces a canonical (sorted-key, compact) JSON string.
+    # Numbers are formatted like JS JSON.stringify so signatures match across
+    # implementations and survive a JS parse/stringify round-trip.
     def self.canonical_json(obj)
       case obj
       when Hash
@@ -259,10 +264,44 @@ module Altcha
         "{#{pairs.join(',')}}"
       when Array
         "[#{obj.map { |v| canonical_json(v) }.join(',')}]"
+      when Integer
+        obj.abs > MAX_SAFE_INTEGER ? js_number_to_s(obj.to_f) : obj.to_s
+      when Float
+        js_number_to_s(obj)
       else
         obj.to_json
       end
     end
+
+    # ECMAScript Number::toString as used by JSON.stringify; non-finite → null.
+    # Float#to_s yields the shortest round-trip digits, same as JS.
+    def self.js_number_to_s(float)
+      return 'null' unless float.finite?
+      return '0' if float.zero?
+
+      mantissa, exponent = float.abs.to_s.split('e')
+      int_part, frac_part = mantissa.split('.')
+      all_digits = int_part + frac_part.to_s
+      digits     = all_digits.sub(/\A0+/, '')
+      # n: position of the decimal point relative to the first significant digit.
+      n      = int_part.length + exponent.to_i - (all_digits.length - digits.length)
+      digits = digits.sub(/0+\z/, '')
+      k      = digits.length
+
+      s = if k <= n && n <= 21
+            digits + ('0' * (n - k))
+          elsif n.positive? && n <= 21
+            "#{digits[0, n]}.#{digits[n..]}"
+          elsif n > -6 && n <= 0
+            "0.#{'0' * -n}#{digits}"
+          else
+            e   = n - 1
+            exp = e.negative? ? "e-#{-e}" : "e+#{e}"
+            k == 1 ? "#{digits}#{exp}" : "#{digits[0]}.#{digits[1..]}#{exp}"
+          end
+      float.negative? ? "-#{s}" : s
+    end
+    private_class_method :js_number_to_s
 
     # Builds the password buffer (nonce bytes + counter) used for key derivation.
     # Counter is encoded as a 4-byte big-endian unsigned integer.
