@@ -506,8 +506,8 @@ module Altcha
         parameters.key_prefix = derived_key_bytes[0, key_prefix_length].unpack1('H*')
       end
 
-      if present?(options.hmac_signature_secret)
-        if derived_key_bytes && present?(options.hmac_key_signature_secret)
+      if js_truthy?(options.hmac_signature_secret)
+        if derived_key_bytes && js_truthy?(options.hmac_key_signature_secret)
           parameters.key_signature = hmac_hex(
             derived_key_bytes,
             options.hmac_key_signature_secret,
@@ -586,7 +586,7 @@ module Altcha
       sha_digest(hmac_algorithm) # raise on misconfiguration, before any early return
       validate_counter_mode(counter_mode)
       # An empty secret makes signatures forgeable (JS WebCrypto rejects it too).
-      raise ArgumentError, 'hmac_signature_secret must be a non-empty String' unless present?(hmac_signature_secret)
+      raise ArgumentError, 'hmac_signature_secret must be a non-empty String' unless js_truthy?(hmac_signature_secret)
 
       # 1. Expiration check. Runs before the signature check, so expires_at may
       # be tampered: only numbers are compared; anything else falls through and
@@ -642,7 +642,7 @@ module Altcha
       # 4a. Fast path: verify via key signature when available.
       # pack('H*') never fails: it pads odd lengths and maps non-hex characters
       # to nibbles, so only well-formed hex is decoded.
-      if present?(challenge.parameters.key_signature) && present?(hmac_key_signature_secret)
+      if js_truthy?(challenge.parameters.key_signature) && js_truthy?(hmac_key_signature_secret)
         valid = HEX_PATTERN.match?(solution.derived_key) &&
                 constant_time_equal?(
                   challenge.parameters.key_signature,
@@ -696,7 +696,8 @@ module Altcha
       nil
     end
 
-    # Verifies the SHA hash of selected form fields.
+    # Verifies the SHA hash of selected form fields. Like JS
+    # `String(data[field] || '')`, falsy values (nil, false, 0, '') hash as ''.
     # @param form_data [Hash]
     # @param fields [Array<String>]
     # @param fields_hash [String] Expected hex digest.
@@ -705,7 +706,7 @@ module Altcha
     # @return [Boolean]
     def self.verify_fields_hash(form_data:, fields:, fields_hash:, algorithm: 'SHA-256')
       digest = sha_digest(algorithm)
-      lines = fields.map { |f| form_data[f].to_s }
+      lines = fields.map { |f| js_truthy?(form_data[f]) ? form_data[f].to_s : '' }
       OpenSSL::Digest.hexdigest(digest, lines.join("\n")) == fields_hash
     end
 
@@ -760,11 +761,14 @@ module Altcha
     end
     private_class_method :valid_solution_fields?
 
-    # JS truthiness for optional secrets/signatures: nil, false and '' are unset.
-    def self.present?(value)
-      !(value.nil? || value == false || value == '')
+    # JS truthiness: nil, false, '', 0, -0.0 and NaN are falsy.
+    def self.js_truthy?(value)
+      return false if value.nil? || value == false || value == ''
+      return !(value.zero? || (value.is_a?(Float) && value.nan?)) if value.is_a?(Numeric)
+
+      true
     end
-    private_class_method :present?
+    private_class_method :js_truthy?
     private_class_method :elapsed_ms
   end
 end

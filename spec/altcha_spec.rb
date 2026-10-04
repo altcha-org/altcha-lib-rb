@@ -882,6 +882,15 @@ RSpec.describe Altcha do
         expect(Altcha::V2.verify_fields_hash(form_data: { 'name' => 'Alice' }, fields: %w[name], fields_hash: 'bad')).to be false
       end
 
+      it 'hashes falsy values as empty strings, like JS String(value || "")' do
+        form_data = { 'nil' => nil, 'false' => false, 'zero' => 0, 'float_zero' => -0.0, 'nan' => Float::NAN,
+                      'empty' => '', 'true' => true, 'name' => 'Alice', 'number' => 42 }
+        # Expected digest computed with altcha-lib (JS) for the same values.
+        fields_hash = OpenSSL::Digest::SHA256.hexdigest(['', '', '', '', '', '', 'true', 'Alice', '42'].join("\n"))
+        expect(Altcha::V2.verify_fields_hash(form_data: form_data, fields: form_data.keys, fields_hash: fields_hash))
+          .to be true
+      end
+
       it 'uses the given SHA-2 algorithm and raises for any other' do
         form_data = { 'name' => 'Alice' }
         sha512    = OpenSSL::Digest::SHA512.hexdigest('Alice')
