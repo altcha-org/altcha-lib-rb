@@ -125,8 +125,8 @@ Creates a new v2 challenge.
 | `data` | `Hash` | `nil` | Arbitrary metadata to embed in the challenge. |
 | `expires_at` | `Integer, Time` | `nil` | Expiration timestamp (Unix seconds or `Time`). Expired once the current time passes it, compared with sub-second precision; `0` means no expiry. |
 | `hmac_algorithm` | `String` | `'SHA-256'` | HMAC algorithm for the challenge signature and key signature: `'SHA-256'`, `'SHA-384'` or `'SHA-512'` (exact, as in altcha-lib JS); anything else raises `ArgumentError`. Pass the same value to `verify_solution`. |
-| `hmac_signature_secret` | `String` | `nil` | Signs the challenge parameters. Required for `verify_solution`. |
-| `hmac_key_signature_secret` | `String` | `nil` | Signs the derived key (fast-path verification). Requires `counter`. |
+| `hmac_signature_secret` | `String` | `nil` | Signs the challenge parameters. Required for `verify_solution`. `nil` or `''` returns an unsigned challenge (no `key_signature` either). |
+| `hmac_key_signature_secret` | `String` | `nil` | Signs the derived key (fast-path verification). Requires `counter`. `nil` or `''` adds no `key_signature`. |
 | `key_length` | `Integer` | `32` | Derived key length in bytes. |
 | `key_prefix` | `String` | `'00'` | Hex prefix the derived key must start with. Lowercased; solve and verify also match prefixes case-insensitively. |
 | `key_prefix_length` | `Integer` | `key_length / 2` | Bytes of the derived key used as prefix in deterministic mode. |
@@ -156,8 +156,8 @@ Verifies a submitted solution.
 |---|---|---|
 | `challenge` | `Challenge` | The original challenge. |
 | `solution` | `Solution` | The submitted solution. |
-| `hmac_signature_secret:` | `String` | Must match the secret used in `create_challenge`. |
-| `hmac_key_signature_secret:` | `String, nil` | Required when `key_signature` is present. |
+| `hmac_signature_secret:` | `String` | Must match the secret used in `create_challenge`. `nil` or `''` raises `ArgumentError`. |
+| `hmac_key_signature_secret:` | `String, nil` | Enables the fast path when `key_signature` is present. `nil` or `''` re-derives the key instead. |
 | `hmac_algorithm:` | `String` | HMAC digest algorithm (`SHA-256`, `SHA-384`, `SHA-512`); anything else raises `ArgumentError`. Default: `SHA-256`. |
 
 **`VerifySolutionResult`**

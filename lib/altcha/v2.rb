@@ -463,8 +463,8 @@ module Altcha
         parameters.key_prefix = derived_key_bytes[0, key_prefix_length].unpack1('H*')
       end
 
-      if options.hmac_signature_secret
-        if derived_key_bytes && options.hmac_key_signature_secret
+      if present?(options.hmac_signature_secret)
+        if derived_key_bytes && present?(options.hmac_key_signature_secret)
           parameters.key_signature = hmac_hex(
             derived_key_bytes,
             options.hmac_key_signature_secret,
@@ -528,6 +528,8 @@ module Altcha
                              hmac_algorithm: 'SHA-256')
       start_time = Time.now
       hmac_digest(hmac_algorithm) # raise on misconfiguration, before any early return
+      # An empty secret makes signatures forgeable (JS WebCrypto rejects it too).
+      raise ArgumentError, 'hmac_signature_secret must be a non-empty String' unless present?(hmac_signature_secret)
 
       # 1. Expiration check. Runs before the signature check, so expires_at may
       # be tampered: only numbers are compared; anything else falls through and
@@ -576,7 +578,7 @@ module Altcha
       # 4a. Fast path: verify via key signature when available.
       # pack('H*') never fails: it pads odd lengths and maps non-hex characters
       # to nibbles, so only well-formed hex is decoded.
-      if challenge.parameters.key_signature && hmac_key_signature_secret
+      if present?(challenge.parameters.key_signature) && present?(hmac_key_signature_secret)
         valid = HEX_PATTERN.match?(solution.derived_key) &&
                 constant_time_equal?(
                   challenge.parameters.key_signature,
@@ -693,6 +695,12 @@ module Altcha
         solution.derived_key.is_a?(String)
     end
     private_class_method :valid_solution_fields?
+
+    # JS truthiness for optional secrets/signatures: nil, false and '' are unset.
+    def self.present?(value)
+      !(value.nil? || value == false || value == '')
+    end
+    private_class_method :present?
     private_class_method :elapsed_ms
   end
 end

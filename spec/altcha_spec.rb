@@ -317,6 +317,20 @@ RSpec.describe Altcha do
           .to eq(Altcha::V2.hmac_hex(derived_key_bytes, 'key_secret', 'SHA-512'))
       end
 
+      it 'treats empty-string secrets as unset' do
+        unsigned = Altcha::V2.create_challenge(Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, counter: 3, hmac_signature_secret: '', hmac_key_signature_secret: 'key_secret'
+        ))
+        expect(unsigned.signature).to be_nil
+        expect(unsigned.parameters.key_signature).to be_nil
+
+        no_key_sig = Altcha::V2.create_challenge(Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, counter: 3, hmac_signature_secret: hmac_secret, hmac_key_signature_secret: ''
+        ))
+        expect(no_key_sig.signature).not_to be_nil
+        expect(no_key_sig.parameters.key_signature).to be_nil
+      end
+
       it 'raises for an hmac_algorithm outside SHA-256/384/512, even when unsigned' do
         ['SHA-1', 'sha-256', nil].each do |algorithm|
           opts = Altcha::V2::CreateChallengeOptions.new(algorithm: 'SHA-256', cost: 1, hmac_algorithm: algorithm)
@@ -478,6 +492,35 @@ RSpec.describe Altcha do
         result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: 'wrong')
         expect(result.verified).to be false
         expect(result.invalid_signature).to be true
+      end
+
+      it 'raises for a missing or empty hmac_signature_secret' do
+        challenge, solution = make_challenge_and_solution
+        [nil, ''].each do |secret|
+          expect { Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: secret) }
+            .to raise_error(ArgumentError, /hmac_signature_secret/), secret.inspect
+        end
+      end
+
+      it 'skips the key signature fast path when the secret or keySignature is empty' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, counter: 3,
+          hmac_signature_secret: hmac_secret, hmac_key_signature_secret: 'key_secret'
+        )
+        challenge = Altcha::V2.create_challenge(opts)
+        solution  = Altcha::V2.solve_challenge(challenge)
+        result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret,
+                                                                 hmac_key_signature_secret: '')
+        expect(result.verified).to be true
+
+        challenge.parameters.key_signature = ''
+        resigned = Altcha::V2::Challenge.new(
+          parameters: challenge.parameters,
+          signature:  Altcha::V2.hmac_hex(Altcha::V2.canonical_json(challenge.parameters.to_h), hmac_secret)
+        )
+        result = Altcha::V2.verify_solution(resigned, solution, hmac_signature_secret: hmac_secret,
+                                                                hmac_key_signature_secret: 'key_secret')
+        expect(result.verified).to be true
       end
 
       it 'raises for an unsupported hmac_algorithm before the expiry check' do
