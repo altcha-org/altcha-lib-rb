@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description   = "A lightweight library for creating and verifying ALTCHA challenges."
   spec.homepage      = "https://altcha.org"
   spec.license       = "MIT"
-  spec.required_ruby_version = ">= 2.7"
+  spec.required_ruby_version = ">= 3.0"
 
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.

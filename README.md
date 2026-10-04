@@ -4,7 +4,7 @@ The ALTCHA Ruby Library is a lightweight, zero-dependency library designed for c
 
 ## Compatibility
 
-- Ruby 2.7+
+- Ruby 3.0+
 
 ## Examples
 
