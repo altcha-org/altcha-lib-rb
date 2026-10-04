@@ -372,6 +372,39 @@ RSpec.describe Altcha do
         expect(result.invalid_solution).to be true
       end
 
+      it 'returns invalid_solution for malformed solution fields instead of raising' do
+        challenge, solution = make_challenge_and_solution
+        [
+          [solution.counter.to_s, solution.derived_key],
+          [nil, solution.derived_key],
+          [solution.counter, nil],
+          [solution.counter, 123]
+        ].each do |counter, derived_key|
+          malformed = Altcha::V2::Solution.new(counter: counter, derived_key: derived_key)
+          result    = Altcha::V2.verify_solution(challenge, malformed, hmac_signature_secret: hmac_secret)
+          expect(result.verified).to be false
+          expect(result.invalid_signature).to be false
+          expect(result.invalid_solution).to be true
+        end
+      end
+
+      it 'returns invalid_solution for a non-string derived_key on the key signature path' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, counter: 0,
+          hmac_signature_secret: hmac_secret,
+          hmac_key_signature_secret: 'key_secret'
+        )
+        challenge = Altcha::V2.create_challenge(opts)
+        malformed = Altcha::V2::Solution.new(counter: 0, derived_key: nil)
+        result    = Altcha::V2.verify_solution(
+          challenge, malformed,
+          hmac_signature_secret: hmac_secret,
+          hmac_key_signature_secret: 'key_secret'
+        )
+        expect(result.verified).to be false
+        expect(result.invalid_solution).to be true
+      end
+
       it 'fails when the derived key does not satisfy key_prefix (slow path)' do
         opts = Altcha::V2::CreateChallengeOptions.new(
           algorithm: 'SHA-256', cost: 1,

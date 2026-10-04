@@ -473,6 +473,16 @@ module Altcha
         )
       end
 
+      # The solution is unsigned client input: reject malformed fields instead
+      # of raising. Counter must be a JSON number (wrapped mod 2^32 like JS
+      # DataView.setUint32); derived_key must be a string.
+      unless valid_solution_fields?(solution)
+        return VerifySolutionResult.new(
+          expired: false, invalid_signature: false, invalid_solution: true,
+          time: elapsed_ms(start_time), verified: false
+        )
+      end
+
       # 4a. Fast path: verify via key signature when available.
       if challenge.parameters.key_signature && hmac_key_signature_secret
         derived_key_bytes = [solution.derived_key].pack('H*')
@@ -584,6 +594,13 @@ module Altcha
     def self.elapsed_ms(start_time)
       ((Time.now - start_time) * 1000).round
     end
+
+    def self.valid_solution_fields?(solution)
+      counter = solution.counter
+      (counter.is_a?(Integer) || (counter.is_a?(Float) && counter.finite?)) &&
+        solution.derived_key.is_a?(String)
+    end
+    private_class_method :valid_solution_fields?
     private_class_method :elapsed_ms
   end
 end
