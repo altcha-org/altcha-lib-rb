@@ -124,6 +124,7 @@ Creates a new v2 challenge.
 | `counter` | `Integer` | `nil` | Pre-compute a deterministic key prefix from this counter value. |
 | `data` | `Hash` | `nil` | Arbitrary metadata to embed in the challenge. |
 | `expires_at` | `Integer, Time` | `nil` | Expiration timestamp (Unix seconds or `Time`). Expired once the current time passes it, compared with sub-second precision; `0` means no expiry. |
+| `hmac_algorithm` | `String` | `'SHA-256'` | HMAC algorithm for the challenge signature and key signature: `'SHA-256'`, `'SHA-384'` or `'SHA-512'` (exact, as in altcha-lib JS); anything else raises `ArgumentError`. Pass the same value to `verify_solution`. |
 | `hmac_signature_secret` | `String` | `nil` | Signs the challenge parameters. Required for `verify_solution`. |
 | `hmac_key_signature_secret` | `String` | `nil` | Signs the derived key (fast-path verification). Requires `counter`. |
 | `key_length` | `Integer` | `32` | Derived key length in bytes. |
@@ -157,7 +158,7 @@ Verifies a submitted solution.
 | `solution` | `Solution` | The submitted solution. |
 | `hmac_signature_secret:` | `String` | Must match the secret used in `create_challenge`. |
 | `hmac_key_signature_secret:` | `String, nil` | Required when `key_signature` is present. |
-| `hmac_algorithm:` | `String` | HMAC digest algorithm (`SHA-256`, `SHA-384`, `SHA-512`). Default: `SHA-256`. |
+| `hmac_algorithm:` | `String` | HMAC digest algorithm (`SHA-256`, `SHA-384`, `SHA-512`); anything else raises `ArgumentError`. Default: `SHA-256`. |
 
 **`VerifySolutionResult`**
 
@@ -173,7 +174,7 @@ Verifies a submitted solution.
 
 ### `Altcha::V2.verify_server_signature(payload:, hmac_secret:)` → `VerifyServerSignatureResult`
 
-Verifies a server signature payload issued by the ALTCHA backend.
+Verifies a server signature payload issued by the ALTCHA backend. A payload `algorithm` other than `SHA-256`, `SHA-384` or `SHA-512` gives `invalid_signature: true`.
 
 | Parameter | Type | Description |
 |---|---|---|

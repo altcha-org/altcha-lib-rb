@@ -295,6 +295,36 @@ RSpec.describe Altcha do
         expect(Altcha::V2.create_challenge(opts).parameters.key_signature).not_to be_nil
       end
 
+      it 'signs the challenge and key signature with hmac_algorithm' do
+        opts = Altcha::V2::CreateChallengeOptions.new(
+          algorithm: 'SHA-256', cost: 1, counter: 7, hmac_algorithm: 'SHA-512',
+          hmac_signature_secret: hmac_secret, hmac_key_signature_secret: 'key_secret'
+        )
+        challenge = Altcha::V2.create_challenge(opts)
+        solution  = Altcha::V2.solve_challenge(challenge)
+        verify = lambda do |algorithm, **secrets|
+          Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret,
+                                                          hmac_algorithm: algorithm, **secrets)
+        end
+
+        expect(verify.call('SHA-512', hmac_key_signature_secret: 'key_secret').verified).to be true
+        expect(verify.call('SHA-512').verified).to be true
+        expect(verify.call('SHA-256').invalid_signature).to be true
+        # keySignature must use the same algorithm: a SHA-256 keySignature would
+        # fail the 4a fast path even with a valid SHA-512 challenge signature.
+        derived_key_bytes = [solution.derived_key].pack('H*')
+        expect(challenge.parameters.key_signature)
+          .to eq(Altcha::V2.hmac_hex(derived_key_bytes, 'key_secret', 'SHA-512'))
+      end
+
+      it 'raises for an hmac_algorithm outside SHA-256/384/512, even when unsigned' do
+        ['SHA-1', 'sha-256', nil].each do |algorithm|
+          opts = Altcha::V2::CreateChallengeOptions.new(algorithm: 'SHA-256', cost: 1, hmac_algorithm: algorithm)
+          expect { Altcha::V2.create_challenge(opts) }
+            .to raise_error(ArgumentError, /Unsupported HMAC algorithm/), algorithm.inspect
+        end
+      end
+
       it 'lowercases a custom key_prefix' do
         opts = Altcha::V2::CreateChallengeOptions.new(
           algorithm: 'SHA-256', cost: 1, key_prefix: 'AB',
@@ -448,6 +478,13 @@ RSpec.describe Altcha do
         result = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: 'wrong')
         expect(result.verified).to be false
         expect(result.invalid_signature).to be true
+      end
+
+      it 'raises for an unsupported hmac_algorithm before the expiry check' do
+        challenge, solution = make_challenge_and_solution(expires_at: Time.now.to_i - 10)
+        expect do
+          Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret, hmac_algorithm: 'SHA-1')
+        end.to raise_error(ArgumentError, /Unsupported HMAC algorithm/)
       end
 
       it 'fails for an expired challenge' do
@@ -708,6 +745,17 @@ RSpec.describe Altcha do
         restored = Altcha::V2::ServerSignaturePayload.from_base64(b64)
         result   = Altcha::V2.verify_server_signature(payload: restored, hmac_secret: hmac_secret)
         expect(result.verified).to be true
+      end
+
+      it 'returns invalid_signature for an unsupported payload algorithm' do
+        # A valid SHA-256 signature must not verify under another algorithm label.
+        ['SHA-1', 'MD5', nil].each do |algorithm|
+          payload = make_server_payload('verified=true', hmac_secret)
+          payload.algorithm = algorithm
+          result = Altcha::V2.verify_server_signature(payload: payload, hmac_secret: hmac_secret)
+          expect(result.verified).to be(false), algorithm.inspect
+          expect(result.invalid_signature).to be true
+        end
       end
     end
   end

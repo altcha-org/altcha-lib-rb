@@ -225,12 +225,12 @@ module Altcha
     # Options for V2.create_challenge.
     class CreateChallengeOptions
       attr_accessor :algorithm, :cost, :counter, :data, :expires_at,
-                    :hmac_signature_secret, :hmac_key_signature_secret,
+                    :hmac_algorithm, :hmac_signature_secret, :hmac_key_signature_secret,
                     :key_length, :key_prefix, :key_prefix_length,
                     :memory_cost, :parallelism
 
       def initialize(algorithm:, cost:, counter: nil, data: nil,
-                     expires_at: nil, hmac_signature_secret: nil,
+                     expires_at: nil, hmac_algorithm: 'SHA-256', hmac_signature_secret: nil,
                      hmac_key_signature_secret: nil, key_length: nil, key_prefix: nil,
                      key_prefix_length: nil, memory_cost: nil, parallelism: nil)
         @algorithm                = algorithm
@@ -238,6 +238,7 @@ module Altcha
         @counter                  = counter
         @data                     = data
         @expires_at               = expires_at
+        @hmac_algorithm           = hmac_algorithm
         @hmac_signature_secret    = hmac_signature_secret
         @hmac_key_signature_secret = hmac_key_signature_secret
         @key_length               = key_length
@@ -404,15 +405,21 @@ module Altcha
       end
     end
 
+    # HMAC algorithms supported by altcha-lib (JS HmacAlgorithm) → OpenSSL digest.
+    HMAC_DIGESTS = { 'SHA-256' => 'SHA256', 'SHA-384' => 'SHA384', 'SHA-512' => 'SHA512' }.freeze
+
     # Computes an HMAC hex digest using the specified algorithm ('SHA-256' etc.).
+    # Raises ArgumentError for any algorithm outside HMAC_DIGESTS.
     def self.hmac_hex(data, key, algorithm = 'SHA-256')
-      digest = case algorithm
-               when 'SHA-384' then 'SHA384'
-               when 'SHA-512' then 'SHA512'
-               else 'SHA256'
-               end
-      OpenSSL::HMAC.hexdigest(digest, key, data)
+      OpenSSL::HMAC.hexdigest(hmac_digest(algorithm), key, data)
     end
+
+    def self.hmac_digest(algorithm)
+      HMAC_DIGESTS.fetch(algorithm) do
+        raise ArgumentError, "Unsupported HMAC algorithm: #{algorithm.inspect} (expected #{HMAC_DIGESTS.keys.join(', ')})"
+      end
+    end
+    private_class_method :hmac_digest
 
     # Constant-time string comparison.
     def self.constant_time_equal?(a, b)
@@ -427,6 +434,7 @@ module Altcha
     # @param options [CreateChallengeOptions]
     # @return [Challenge]
     def self.create_challenge(options)
+      hmac_digest(options.hmac_algorithm) # raise early, even for unsigned challenges
       key_length        = options.key_length        || DEFAULT_KEY_LENGTH
       key_prefix        = (options.key_prefix       || DEFAULT_KEY_PREFIX).downcase
       key_prefix_length = options.key_prefix_length || (key_length / 2)
@@ -459,12 +467,14 @@ module Altcha
         if derived_key_bytes && options.hmac_key_signature_secret
           parameters.key_signature = hmac_hex(
             derived_key_bytes,
-            options.hmac_key_signature_secret
+            options.hmac_key_signature_secret,
+            options.hmac_algorithm
           )
         end
         signature = hmac_hex(
           canonical_json(parameters.to_h),
-          options.hmac_signature_secret
+          options.hmac_signature_secret,
+          options.hmac_algorithm
         )
         Challenge.new(parameters: parameters, signature: signature)
       else
@@ -517,6 +527,7 @@ module Altcha
                              hmac_key_signature_secret: nil,
                              hmac_algorithm: 'SHA-256')
       start_time = Time.now
+      hmac_digest(hmac_algorithm) # raise on misconfiguration, before any early return
 
       # 1. Expiration check. Runs before the signature check, so expires_at may
       # be tampered: only numbers are compared; anything else falls through and
@@ -642,21 +653,19 @@ module Altcha
     def self.verify_server_signature(payload:, hmac_secret:)
       start_time = Time.now
 
-      digest = case payload.algorithm
-               when 'SHA-512' then 'SHA512'
-               when 'SHA-384' then 'SHA384'
-               else 'SHA256'
-               end
-
-      hash_bytes        = OpenSSL::Digest.digest(digest, payload.verification_data)
-      expected_sig      = hmac_hex(hash_bytes, hmac_secret, payload.algorithm)
+      # payload.algorithm is client input: an unsupported value fails the
+      # signature check instead of raising.
+      digest = HMAC_DIGESTS[payload.algorithm]
+      expected_sig = if digest
+                       hmac_hex(OpenSSL::Digest.digest(digest, payload.verification_data), hmac_secret, payload.algorithm)
+                     end
       verification_data = parse_verification_data(payload.verification_data)
 
       expired = !!(verification_data &&
                    verification_data['expire'] &&
                    verification_data['expire'] < Time.now.to_i)
 
-      invalid_signature = !constant_time_equal?(payload.signature.to_s, expected_sig)
+      invalid_signature = expected_sig.nil? || !constant_time_equal?(payload.signature.to_s, expected_sig)
 
       invalid_solution = verification_data.nil? ||
                          verification_data['verified'] != true ||
