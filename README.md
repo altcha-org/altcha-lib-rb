@@ -223,6 +223,8 @@ Produces a canonical compact JSON string, byte-identical to JS `JSON.stringify(s
 - `.from_json(string)` / `#to_json`
 
 **`Altcha::V2::ChallengeParameters`** — all parameters embedded in a challenge.
+- `extra` — `Hash` of parsed parameter keys without a non-nil attribute (unknown fields, explicit `null`s). Serialized and signed verbatim, so challenges from other implementations verify; injected fields fail the signature check.
+- `key_length` / `key_prefix` — default to `32` / `'00'` when absent from a parsed challenge, but absent keys are not added to the signed JSON.
 
 **`Altcha::V2::Solution`** — solution returned by `solve_challenge`.
 - `counter` — `Integer`

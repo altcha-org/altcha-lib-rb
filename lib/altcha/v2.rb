@@ -17,12 +17,20 @@ module Altcha
 
     # All parameters embedded in a v2 challenge.
     class ChallengeParameters
-      attr_accessor :algorithm, :nonce, :salt, :cost, :key_length, :key_prefix,
-                    :key_signature, :memory_cost, :parallelism, :expires_at, :data
+      # camelCase keys backed by attributes; any other key goes to #extra.
+      KEYS = %w[algorithm cost data expiresAt keyLength keyPrefix keySignature
+                memoryCost nonce parallelism salt].freeze
 
+      attr_accessor :algorithm, :nonce, :salt, :cost, :key_signature, :memory_cost,
+                    :parallelism, :expires_at, :data, :extra
+      attr_writer :key_length, :key_prefix
+
+      # extra: keys from a parsed challenge with no non-nil attribute (unknown
+      # fields, explicit nulls). Serialized verbatim so the signed canonical JSON
+      # matches what the issuer signed, as JS canonicalJSON does.
       def initialize(algorithm:, nonce:, salt:, cost:, key_length: DEFAULT_KEY_LENGTH,
                      key_prefix: DEFAULT_KEY_PREFIX, key_signature: nil,
-                     memory_cost: nil, parallelism: nil, expires_at: nil, data: nil)
+                     memory_cost: nil, parallelism: nil, expires_at: nil, data: nil, extra: {})
         @algorithm    = algorithm
         @nonce        = nonce
         @salt         = salt
@@ -34,24 +42,36 @@ module Altcha
         @parallelism  = parallelism
         @expires_at   = expires_at
         @data         = data
+        @extra        = extra
       end
 
-      # Serializes to a plain Hash with camelCase keys, omitting nil optional fields.
-      # The resulting hash must be stable across round-trips for HMAC signing to work.
+      # A parsed challenge may omit keyLength/keyPrefix: use the defaults for
+      # solving and verifying, but keep them out of the signed JSON.
+      def key_length
+        @key_length.nil? ? DEFAULT_KEY_LENGTH : @key_length
+      end
+
+      def key_prefix
+        @key_prefix.nil? ? DEFAULT_KEY_PREFIX : @key_prefix
+      end
+
+      # Serializes to a plain Hash with camelCase keys: non-nil attributes plus
+      # #extra. Must reproduce the issuer's parameters exactly for HMAC signing.
       def to_h
         h = {
-          'algorithm' => algorithm,
-          'cost'      => cost,
-          'keyLength' => key_length,
-          'keyPrefix' => key_prefix,
-          'nonce'     => nonce,
-          'salt'      => salt,
-        }
-        h['data']         = data          unless data.nil?
-        h['expiresAt']    = expires_at    unless expires_at.nil?
-        h['keySignature'] = key_signature unless key_signature.nil?
-        h['memoryCost']   = memory_cost   unless memory_cost.nil?
-        h['parallelism']  = parallelism   unless parallelism.nil?
+          'algorithm'    => algorithm,
+          'cost'         => cost,
+          'data'         => data,
+          'expiresAt'    => expires_at,
+          'keyLength'    => @key_length,
+          'keyPrefix'    => @key_prefix,
+          'keySignature' => key_signature,
+          'memoryCost'   => memory_cost,
+          'nonce'        => nonce,
+          'parallelism'  => parallelism,
+          'salt'         => salt
+        }.compact
+        extra.each { |key, value| h[key] = value unless h.key?(key) }
         h
       end
 
@@ -87,13 +107,14 @@ module Altcha
             nonce:        p['nonce'],
             salt:         p['salt'],
             cost:         p['cost'],
-            key_length:   p.fetch('keyLength',  DEFAULT_KEY_LENGTH),
-            key_prefix:   p.fetch('keyPrefix',  DEFAULT_KEY_PREFIX),
+            key_length:   p['keyLength'],
+            key_prefix:   p['keyPrefix'],
             key_signature: p['keySignature'],
             memory_cost:  p['memoryCost'],
             parallelism:  p['parallelism'],
             expires_at:   p['expiresAt'],
-            data:         p['data']
+            data:         p['data'],
+            extra:        p.reject { |key, value| !value.nil? && ChallengeParameters::KEYS.include?(key) }
           ),
           signature: data['signature']
         )

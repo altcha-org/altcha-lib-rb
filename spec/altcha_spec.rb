@@ -596,6 +596,36 @@ RSpec.describe Altcha do
         expect(result.expired).to be false
       end
 
+      it 'signs foreign parameters exactly as received: unknown fields, explicit nulls, missing keyLength' do
+        base = {
+          'algorithm' => 'SHA-256', 'cost' => 1, 'keyPrefix' => '0',
+          'nonce' => 'aabbccdd00112233aabbccdd00112233', 'salt' => '11223344556677889900aabbccddeeff'
+        }
+        [
+          base.merge('keyLength' => 32, 'foo' => { 'b' => 1, 'a' => [2] }),
+          base.merge('keyLength' => 32, 'memoryCost' => nil, 'expiresAt' => nil),
+          base
+        ].each do |parameters|
+          # Signed the way JS does: HMAC over canonicalJSON of the received object.
+          signed    = { 'parameters' => parameters,
+                        'signature'  => Altcha::V2.hmac_hex(Altcha::V2.canonical_json(parameters), hmac_secret) }
+          challenge = Altcha::V2::Challenge.from_json(signed.to_json)
+          expect(challenge.parameters.to_h).to eq(parameters)
+          solution = Altcha::V2.solve_challenge(challenge)
+          result   = Altcha::V2.verify_solution(challenge, solution, hmac_signature_secret: hmac_secret)
+          expect(result.verified).to be(true), parameters.keys.inspect
+        end
+      end
+
+      it 'returns invalid_signature when an unsigned parameter field is injected' do
+        challenge, solution = make_challenge_and_solution
+        data = JSON.parse(challenge.to_json)
+        data['parameters']['foo'] = 'bar'
+        result = Altcha::V2.verify_solution(Altcha::V2::Challenge.from_h(data), solution,
+                                            hmac_signature_secret: hmac_secret)
+        expect(result.invalid_signature).to be true
+      end
+
       it 'returns invalid_signature for a tampered non-numeric expiresAt instead of raising' do
         challenge, solution = make_challenge_and_solution(expires_at: Time.now.to_i + 600)
         ['abc', [1], { 'a' => 1 }].each do |tampered_expires_at|
