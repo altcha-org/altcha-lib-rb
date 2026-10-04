@@ -12,6 +12,8 @@ module Altcha
   module V2
     DEFAULT_KEY_LENGTH = 32
     DEFAULT_KEY_PREFIX = '00'
+    # Even-length hex string (case-insensitive, like JS parseInt).
+    HEX_PATTERN = /\A(?:[0-9a-fA-F]{2})*\z/.freeze
 
     # All parameters embedded in a v2 challenge.
     class ChallengeParameters
@@ -532,10 +534,14 @@ module Altcha
       end
 
       # 4a. Fast path: verify via key signature when available.
+      # pack('H*') never fails: it pads odd lengths and maps non-hex characters
+      # to nibbles, so only well-formed hex is decoded.
       if challenge.parameters.key_signature && hmac_key_signature_secret
-        derived_key_bytes = [solution.derived_key].pack('H*')
-        expected_key_sig  = hmac_hex(derived_key_bytes, hmac_key_signature_secret, hmac_algorithm)
-        valid = constant_time_equal?(challenge.parameters.key_signature, expected_key_sig)
+        valid = HEX_PATTERN.match?(solution.derived_key) &&
+                constant_time_equal?(
+                  challenge.parameters.key_signature,
+                  hmac_hex([solution.derived_key].pack('H*'), hmac_key_signature_secret, hmac_algorithm)
+                )
         return VerifySolutionResult.new(
           expired: false, invalid_signature: false, invalid_solution: !valid,
           time: elapsed_ms(start_time), verified: valid

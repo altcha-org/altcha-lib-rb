@@ -488,6 +488,33 @@ RSpec.describe Altcha do
         expect(result.invalid_solution).to be true
       end
 
+      it 'returns invalid_solution for a non-hex or odd-length derived_key on the key signature path' do
+        key_hex   = 'a0' * 32
+        params    = Altcha::V2::ChallengeParameters.new(
+          algorithm: 'SHA-256', nonce: '00' * 16, salt: '00' * 16, cost: 1,
+          key_signature: Altcha::V2.hmac_hex([key_hex].pack('H*'), 'key_secret')
+        )
+        challenge = Altcha::V2::Challenge.new(
+          parameters: params,
+          signature:  Altcha::V2.hmac_hex(Altcha::V2.canonical_json(params.to_h), hmac_secret)
+        )
+        verify = lambda do |derived_key|
+          Altcha::V2.verify_solution(
+            challenge, Altcha::V2::Solution.new(counter: 0, derived_key: derived_key),
+            hmac_signature_secret: hmac_secret, hmac_key_signature_secret: 'key_secret'
+          )
+        end
+
+        expect(verify.call(key_hex).verified).to be true
+        expect(verify.call(key_hex.upcase).verified).to be true
+        # Each of these decodes to the real key bytes with pack('H*').
+        [key_hex[0..-2], key_hex.tr('a', ':'), key_hex.tr('0', 'g'), "#{key_hex}\n"].each do |malformed|
+          result = verify.call(malformed)
+          expect(result.verified).to be(false), malformed.inspect
+          expect(result.invalid_solution).to be true
+        end
+      end
+
       it 'fails when the derived key does not satisfy key_prefix (slow path)' do
         opts = Altcha::V2::CreateChallengeOptions.new(
           algorithm: 'SHA-256', cost: 1,
