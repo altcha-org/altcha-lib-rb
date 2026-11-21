@@ -56,6 +56,13 @@ RSpec.describe Altcha do
         expect(challenge.challenge).not_to be_empty
         expect(challenge.signature).not_to be_empty
       end
+
+      it 'raises for a number that is not an Integer' do
+        ['expires=1&123', 123.0, true].each do |bad|
+          opts = Altcha::V1::ChallengeOptions.new(hmac_key: hmac_key, salt: salt, number: bad)
+          expect { Altcha::V1.create_challenge(opts) }.to raise_error(ArgumentError, /number must be an Integer/)
+        end
+      end
     end
 
     describe '.verify_solution' do
@@ -90,6 +97,40 @@ RSpec.describe Altcha do
         expect(Altcha::V1.verify_solution(payload, hmac_key, true)).to be true
       end
 
+      it 'verifies a correct solution with params and no expires' do
+        challenge = Altcha::V1.create_challenge(
+          Altcha::V1::ChallengeOptions.new(hmac_key: hmac_key, number: number, params: { 'user' => 'alice' })
+        )
+        payload = {
+          algorithm: challenge.algorithm,
+          challenge: challenge.challenge,
+          number:    number,
+          salt:      challenge.salt,
+          signature: challenge.signature
+        }
+        expect(Altcha::V1.verify_solution(payload, hmac_key, true)).to be true
+      end
+
+      it 'fails to verify an expired solution' do
+        challenge = Altcha::V1.create_challenge(
+          Altcha::V1::ChallengeOptions.new(
+            hmac_key: hmac_key,
+            number:   number,
+            expires:  Time.now.to_i - 1,
+            params:   { 'user' => 'alice' }
+          )
+        )
+        payload = {
+          algorithm: challenge.algorithm,
+          challenge: challenge.challenge,
+          number:    number,
+          salt:      challenge.salt,
+          signature: challenge.signature
+        }
+        expect(Altcha::V1.verify_solution(payload, hmac_key, true)).to be false
+        expect(Altcha::V1.verify_solution(payload, hmac_key, false)).to be true
+      end
+
       it 'fails to verify an incorrect solution with salt splicing' do
         opts = Altcha::V1::ChallengeOptions.new(
           algorithm: algorithm,
@@ -107,6 +148,62 @@ RSpec.describe Altcha do
           signature: challenge.signature
         }
         expect(Altcha::V1.verify_solution(payload, hmac_key, true)).to be false
+      end
+
+      context 'with the salt tail moved into a String number' do
+        # Moves the tail of the signed salt, starting at "&<cut_at>", into a
+        # String number; the verifier re-adds the '&' so the hashed bytes match.
+        def move_salt_tail_to_number(challenge, number, cut_at)
+          body = challenge.salt.chomp('&')
+          cut  = body.index("&#{cut_at}=")
+          {
+            algorithm: challenge.algorithm,
+            challenge: challenge.challenge,
+            number:    "#{body[(cut + 1)..]}&#{number}",
+            salt:      body[0...cut],
+            signature: challenge.signature
+          }
+        end
+
+        it 'rejects an expired challenge with expires moved into the number' do
+          challenge = Altcha::V1.create_challenge(
+            Altcha::V1::ChallengeOptions.new(
+              hmac_key: hmac_key,
+              number:   number,
+              expires:  Time.now.to_i - 300,
+              params:   { 'user' => 'alice', 'action' => 'login' }
+            )
+          )
+          payload = move_salt_tail_to_number(challenge, number, 'expires')
+          expect(Altcha::V1.extract_params(Altcha::V1::Payload.new(**payload))).not_to have_key('expires')
+          expect(Altcha::V1.verify_solution(payload, hmac_key, true)).to be false
+        end
+
+        it 'rejects hidden signed params when expiry is not checked' do
+          challenge = Altcha::V1.create_challenge(
+            Altcha::V1::ChallengeOptions.new(
+              hmac_key: hmac_key,
+              number:   number,
+              params:   { 'user' => 'alice', 'scope' => 'admin-only' }
+            )
+          )
+          payload = move_salt_tail_to_number(challenge, number, 'scope')
+          expect(Altcha::V1.extract_params(Altcha::V1::Payload.new(**payload))).to eq('user' => 'alice')
+          expect(Altcha::V1.verify_solution(payload, hmac_key, false)).to be false
+          expect(Altcha::V1.verify_solution(Base64.strict_encode64(payload.to_json), hmac_key, false)).to be false
+        end
+
+        it 'rejects hidden signed params after an unexpired expires' do
+          challenge = Altcha::V1.create_challenge(
+            Altcha::V1::ChallengeOptions.new(
+              hmac_key: hmac_key,
+              number:   number,
+              salt:     "#{salt}?expires=#{Time.now.to_i + 3600}&scope=admin-only"
+            )
+          )
+          payload = move_salt_tail_to_number(challenge, number, 'scope')
+          expect(Altcha::V1.verify_solution(payload, hmac_key, true)).to be false
+        end
       end
 
       it 'fails to verify an incorrect solution' do

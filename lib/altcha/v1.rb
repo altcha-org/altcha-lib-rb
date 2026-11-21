@@ -205,6 +205,10 @@ module Altcha
       salt += salt.end_with?('&') ? '' : '&'
 
       number    = options.number || random_int(max_number)
+      # A non-Integer number (e.g. a String containing '&') could carry part of
+      # the signed salt, moving the salt/number boundary past the delimiter.
+      raise ArgumentError, "number must be an Integer, got #{number.class}" unless number.is_a?(Integer)
+
       challenge = hash_hex(algorithm, "#{salt}#{number}")
       signature = hmac_hex(algorithm, challenge, options.hmac_key)
 
@@ -237,9 +241,12 @@ module Altcha
         return false if value.nil? || value.to_s.strip.empty?
       end
 
+      # Reject before hashing; see create_challenge.
+      return false unless payload.number.is_a?(Integer)
+
       if check_expires && payload.salt.include?('?')
-        expires = URI.decode_www_form(payload.salt.split('?').last).to_h['expires'].to_i
-        return false if expires && Time.now.to_i > expires
+        expires = URI.decode_www_form(payload.salt.split('?').last).to_h['expires']
+        return false if expires && Time.now.to_i > expires.to_i
       end
 
       expected = create_challenge(
