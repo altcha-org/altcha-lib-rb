@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.0] - 2026-11-21
+
+### Security
+
+- `Altcha::V1.verify_solution` returns `false` when `number` is not an `Integer`. Before, a String `number` could carry the tail of the signed salt across the `&` delimiter: the challenge and signature still matched, but the expiry check and `extract_params` only saw the shortened salt. This hid trailing signed params when `check_expires` was `false`, or when they came after `expires` in a custom `salt`. Together with the fix below, it would also have let an expired challenge verify. `Altcha::V1.create_challenge` raises `ArgumentError` for a `number` that is not an `Integer`.
+
+### Fixed
+
+- `Altcha::V1.verify_solution` with `check_expires = true` verifies a challenge whose salt has a query but no `expires`, such as one created with `params` and without `expires`. Before, a missing `expires` was read as `0` and the challenge was rejected as expired. A present `expires` that is not a number is still rejected.
+
 ## [3.0.0] - 2026-10-04
 
 Brings `Altcha::V2` in line with the reference JS implementation: challenges, solutions and signatures now interoperate in both directions.

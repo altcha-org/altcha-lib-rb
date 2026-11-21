@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    altcha (3.0.0)
+    altcha (3.1.0)
       base64
 
 GEM
